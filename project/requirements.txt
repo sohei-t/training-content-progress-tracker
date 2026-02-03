@@ -1,0 +1,32 @@
+# 研修コンテンツ進捗トラッカー - Python依存関係
+# パフォーマンス最適化版（Prototype B）
+
+# Web Framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# Database (非同期)
+aiosqlite>=0.20.0
+
+# File System (非同期)
+aiofiles>=24.1.0
+watchdog>=4.0.0
+
+# Hashing (高速)
+xxhash>=3.4.0
+
+# Data Validation
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+
+# File Upload (optional)
+python-multipart>=0.0.9
+
+# Performance (optional)
+uvloop>=0.19.0; sys_platform != 'win32'
+
+# Testing
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-cov>=4.0.0
+httpx>=0.27.0

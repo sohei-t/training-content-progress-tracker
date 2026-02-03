@@ -1,0 +1,356 @@
+/**
+ * 研修コンテンツ進捗トラッカー - カスタムスタイル
+ * パフォーマンス最適化: 軽量CSS、GPUアクセラレーション活用
+ */
+
+/* ========== ベーススタイル ========== */
+[v-cloak] {
+    display: none !important;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+    line-height: 1.6;
+}
+
+/* ========== アニメーション（GPUアクセラレーション） ========== */
+.fade-in {
+    animation: fadeIn 0.3s ease-out;
+    will-change: opacity, transform;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.fade-out {
+    animation: fadeOut 0.3s ease-out;
+}
+
+@keyframes fadeOut {
+    from {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+}
+
+/* スライドイン */
+.slide-in-right {
+    animation: slideInRight 0.3s ease-out;
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* ========== ローディング ========== */
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #3B82F6;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    will-change: transform;
+}
+
+.loading-spinner.small {
+    width: 16px;
+    height: 16px;
+    border-width: 2px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* パルスアニメーション（接続状態） */
+.pulse {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+/* ========== プログレスバー ========== */
+.progress-bar {
+    transition: width 0.5s ease-out;
+    will-change: width;
+}
+
+.progress-bar-animated {
+    background-image: linear-gradient(
+        45deg,
+        rgba(255, 255, 255, 0.15) 25%,
+        transparent 25%,
+        transparent 50%,
+        rgba(255, 255, 255, 0.15) 50%,
+        rgba(255, 255, 255, 0.15) 75%,
+        transparent 75%,
+        transparent
+    );
+    background-size: 1rem 1rem;
+    animation: progressStripes 1s linear infinite;
+}
+
+@keyframes progressStripes {
+    from { background-position: 1rem 0; }
+    to { background-position: 0 0; }
+}
+
+/* ========== カード ========== */
+.card {
+    background: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+    will-change: box-shadow, transform;
+}
+
+.card:hover {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    transform: translateY(-2px);
+}
+
+.card-clickable {
+    cursor: pointer;
+}
+
+/* ========== ボタン ========== */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-weight: 500;
+    border-radius: 0.5rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    border: none;
+    outline: none;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-primary {
+    background-color: #3B82F6;
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background-color: #2563EB;
+}
+
+.btn-secondary {
+    background-color: #6B7280;
+    color: white;
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background-color: #4B5563;
+}
+
+/* ========== バッジ ========== */
+.badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    border-radius: 0.25rem;
+}
+
+.badge-success {
+    background-color: #D1FAE5;
+    color: #065F46;
+}
+
+.badge-warning {
+    background-color: #FEF3C7;
+    color: #92400E;
+}
+
+.badge-info {
+    background-color: #DBEAFE;
+    color: #1E40AF;
+}
+
+.badge-default {
+    background-color: #F3F4F6;
+    color: #374151;
+}
+
+/* ========== 仮想スクロール ========== */
+.virtual-scroll-container {
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    will-change: scroll-position;
+}
+
+.virtual-scroll-item {
+    contain: layout style;
+}
+
+/* カスタムスクロールバー */
+.virtual-scroll-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.virtual-scroll-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.virtual-scroll-container::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+.virtual-scroll-container::-webkit-scrollbar-thumb:hover {
+    background: #a1a1a1;
+}
+
+/* ========== トースト通知 ========== */
+.toast-container {
+    position: fixed;
+    bottom: 1rem;
+    right: 1rem;
+    z-index: 9999;
+}
+
+.toast {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    animation: slideInRight 0.3s ease-out;
+}
+
+.toast-success {
+    background-color: #10B981;
+    color: white;
+}
+
+.toast-error {
+    background-color: #EF4444;
+    color: white;
+}
+
+.toast-info {
+    background-color: #3B82F6;
+    color: white;
+}
+
+/* ========== レスポンシブ ========== */
+@media (max-width: 768px) {
+    .container {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+
+    /* カードグリッド調整 */
+    .card-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* ヘッダー調整 */
+    header h1 {
+        font-size: 1rem;
+    }
+
+    /* サマリーカード調整 */
+    .summary-cards {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 480px) {
+    .summary-cards {
+        grid-template-columns: 1fr;
+    }
+
+    /* フィルターボタン調整 */
+    .filter-buttons {
+        flex-wrap: wrap;
+    }
+
+    .filter-buttons button {
+        flex: 1 1 45%;
+    }
+}
+
+/* ========== アクセシビリティ ========== */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* フォーカス表示 */
+:focus-visible {
+    outline: 2px solid #3B82F6;
+    outline-offset: 2px;
+}
+
+/* ========== ダークモード対応（将来用） ========== */
+@media (prefers-color-scheme: dark) {
+    /* 将来のダークモード対応用 */
+}
+
+/* ========== 印刷スタイル ========== */
+@media print {
+    header,
+    .btn,
+    .toast-container {
+        display: none !important;
+    }
+
+    body {
+        background: white;
+    }
+
+    .card {
+        box-shadow: none;
+        border: 1px solid #e5e7eb;
+    }
+}
