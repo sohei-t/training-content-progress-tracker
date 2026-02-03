@@ -31,6 +31,12 @@ const app = createApp({
         const topicFilter = ref('all');
         const toasts = ref([]);
 
+        // 新機能: 表示モードとプロジェクトフィルター
+        const viewMode = ref('card');           // 'card' または 'list'
+        const projectFilter = ref('all');       // 'all', 'completed', 'incomplete', 'custom'
+        const customRangeMin = ref(0);          // カスタム範囲の最小値
+        const customRangeMax = ref(100);        // カスタム範囲の最大値
+
         // フィルターラベル
         const filterLabels = {
             all: '全て',
@@ -48,6 +54,77 @@ const app = createApp({
             switch (sortBy.value) {
                 case 'progress':
                     sorted.sort((a, b) => (b.progress || 0) - (a.progress || 0));
+                    break;
+                case 'updated':
+                    sorted.sort((a, b) => {
+                        const dateA = a.last_scanned_at ? new Date(a.last_scanned_at) : new Date(0);
+                        const dateB = b.last_scanned_at ? new Date(b.last_scanned_at) : new Date(0);
+                        return dateB - dateA;
+                    });
+                    break;
+                case 'name':
+                default:
+                    sorted.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+            }
+
+            return sorted;
+        });
+
+        // 完了プロジェクト（100%以上）
+        const completedProjects = computed(() => {
+            const list = projects.value || [];
+            return list.filter(p => (p.progress || 0) >= 100);
+        });
+
+        // 未完了プロジェクト（100%未満）
+        const incompleteProjects = computed(() => {
+            const list = projects.value || [];
+            return list.filter(p => (p.progress || 0) < 100);
+        });
+
+        // カスタム範囲フィルター
+        const customFilteredProjects = computed(() => {
+            const list = projects.value || [];
+            const min = Number(customRangeMin.value) || 0;
+            const max = Number(customRangeMax.value) || 100;
+            return list.filter(p => {
+                const progress = p.progress || 0;
+                return progress >= min && progress <= max;
+            });
+        });
+
+        // フィルター適用後のプロジェクト
+        const filteredProjects = computed(() => {
+            const list = projects.value || [];
+            switch (projectFilter.value) {
+                case 'completed':
+                    return list.filter(p => (p.progress || 0) >= 100);
+                case 'incomplete':
+                    return list.filter(p => (p.progress || 0) < 100);
+                case 'custom':
+                    const min = Number(customRangeMin.value) || 0;
+                    const max = Number(customRangeMax.value) || 100;
+                    return list.filter(p => {
+                        const progress = p.progress || 0;
+                        return progress >= min && progress <= max;
+                    });
+                case 'all':
+                default:
+                    return list;
+            }
+        });
+
+        // フィルター + ソート適用後のプロジェクト
+        const sortedFilteredProjects = computed(() => {
+            const filtered = filteredProjects.value || [];
+            const sorted = [...filtered];
+
+            switch (sortBy.value) {
+                case 'progress':
+                    sorted.sort((a, b) => (b.progress || 0) - (a.progress || 0));
+                    break;
+                case 'progress_asc':
+                    sorted.sort((a, b) => (a.progress || 0) - (b.progress || 0));
                     break;
                 case 'updated':
                     sorted.sort((a, b) => {
@@ -293,9 +370,20 @@ const app = createApp({
             toasts,
             filterLabels,
 
+            // 新機能: 表示モードとフィルター
+            viewMode,
+            projectFilter,
+            customRangeMin,
+            customRangeMax,
+
             // 算出プロパティ
             sortedProjects,
             filteredTopics,
+            completedProjects,
+            incompleteProjects,
+            customFilteredProjects,
+            filteredProjects,
+            sortedFilteredProjects,
 
             // メソッド
             selectProject,
