@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>About - Training Content Progress Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        [data-lang] { display: none; }
+        [data-lang].active { display: block; }
+        .lang-btn { transition: all 0.2s ease; }
+        .lang-btn.active {
+            background-color: #3B82F6;
+            color: white;
+        }
+        .section-card {
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .section-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        .metric-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .feature-icon {
+            width: 48px;
+            height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            font-size: 24px;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm sticky top-0 z-50">
+        <div class="container mx-auto px-4 py-4">
+            <div class="flex justify-between items-center">
+                <h1 class="text-xl font-bold text-gray-800">
+                    <span data-lang="ja" class="active">研修コンテンツ進捗トラッカー</span>
+                    <span data-lang="en">Training Content Progress Tracker</span>
+                </h1>
+                <!-- Language Switcher -->
+                <div class="flex items-center gap-2">
+                    <button id="lang-ja" class="lang-btn px-3 py-1 rounded-lg text-sm border border-gray-300 active">
+                        JP
+                    </button>
+                    <button id="lang-en" class="lang-btn px-3 py-1 rounded-lg text-sm border border-gray-300">
+                        EN
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-4 py-8 max-w-4xl">
+        <!-- Hero Section -->
+        <section class="text-center mb-12">
+            <h2 class="text-4xl font-bold text-gray-800 mb-4">
+                <span data-lang="ja" class="active">プロジェクト概要</span>
+                <span data-lang="en">Project Overview</span>
+            </h2>
+            <p class="text-xl text-gray-600 leading-relaxed">
+                <span data-lang="ja" class="active">
+                    研修コンテンツの制作進捗をリアルタイムで可視化するダッシュボードアプリケーションです。
+                    ファイルシステムを監視し、HTML/TXT/MP3ファイルの完成状況を自動追跡します。
+                </span>
+                <span data-lang="en">
+                    A dashboard application that visualizes training content production progress in real-time.
+                    It monitors the file system and automatically tracks the completion status of HTML/TXT/MP3 files.
+                </span>
+            </p>
+        </section>
+
+        <!-- Audio Explanation -->
+        <section class="bg-gradient-to-r from-blue-500 to-purple-600 rounded-2xl p-6 mb-12 text-white">
+            <div class="flex flex-col md:flex-row items-center gap-6">
+                <div class="flex-shrink-0">
+                    <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center">
+                        <svg class="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+                        </svg>
+                    </div>
+                </div>
+                <div class="flex-1 text-center md:text-left">
+                    <h3 class="text-xl font-bold mb-2">
+                        <span data-lang="ja" class="active">音声解説を聴く</span>
+                        <span data-lang="en">Listen to Audio Explanation</span>
+                    </h3>
+                    <p class="text-white/80 mb-3">
+                        <span data-lang="ja" class="active">プロジェクトの概要を音声で説明します</span>
+                        <span data-lang="en">Audio explanation of the project overview</span>
+                    </p>
+                    <audio controls class="w-full max-w-md" id="audio-player">
+                        <source src="./explanation.mp3" type="audio/mpeg">
+                        <span data-lang="ja" class="active">お使いのブラウザは音声再生に対応していません。</span>
+                        <span data-lang="en">Your browser does not support audio playback.</span>
+                    </audio>
+                </div>
+            </div>
+        </section>
+
+        <!-- Features -->
+        <section class="mb-12">
+            <h3 class="text-2xl font-bold text-gray-800 mb-6">
+                <span data-lang="ja" class="active">主な機能</span>
+                <span data-lang="en">Key Features</span>
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="section-card bg-white rounded-xl p-6 shadow-sm">
+                    <div class="feature-icon bg-blue-100 text-blue-600 mb-4">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                    </div>
+                    <h4 class="font-bold text-gray-800 mb-2">
+                        <span data-lang="ja" class="active">リアルタイム更新</span>
+                        <span data-lang="en">Real-time Updates</span>
+                    </h4>
+                    <p class="text-gray-600 text-sm">
+                        <span data-lang="ja" class="active">WebSocketでファイル変更を即座に画面へ反映します</span>
+                        <span data-lang="en">File changes are immediately reflected on screen via WebSocket</span>
+                    </p>
+                </div>
+                <div class="section-card bg-white rounded-xl p-6 shadow-sm">
+                    <div class="feature-icon bg-green-100 text-green-600 mb-4">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                    </div>
+                    <h4 class="font-bold text-gray-800 mb-2">
+                        <span data-lang="ja" class="active">進捗可視化</span>
+                        <span data-lang="en">Progress Visualization</span>
+                    </h4>
+                    <p class="text-gray-600 text-sm">
+                        <span data-lang="ja" class="active">HTML/TXT/MP3の3種類の成果物を色分けで表示</span>
+                        <span data-lang="en">Three types of deliverables (HTML/TXT/MP3) displayed with color coding</span>
+                    </p>
+                </div>
+                <div class="section-card bg-white rounded-xl p-6 shadow-sm">
+                    <div class="feature-icon bg-purple-100 text-purple-600 mb-4">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+                        </svg>
+                    </div>
+                    <h4 class="font-bold text-gray-800 mb-2">
+                        <span data-lang="ja" class="active">マルチプロジェクト対応</span>
+                        <span data-lang="en">Multi-project Support</span>
+                    </h4>
+                    <p class="text-gray-600 text-sm">
+                        <span data-lang="ja" class="active">複数の研修プロジェクトを一元管理できます</span>
+                        <span data-lang="en">Manage multiple training projects in one place</span>
+                    </p>
+                </div>
+                <div class="section-card bg-white rounded-xl p-6 shadow-sm">
+                    <div class="feature-icon bg-orange-100 text-orange-600 mb-4">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                        </svg>
+                    </div>
+                    <h4 class="font-bold text-gray-800 mb-2">
+                        <span data-lang="ja" class="active">自動ファイル監視</span>
+                        <span data-lang="en">Automatic File Monitoring</span>
+                    </h4>
+                    <p class="text-gray-600 text-sm">
+                        <span data-lang="ja" class="active">ファイルシステムの変更を自動検出して更新</span>
+                        <span data-lang="en">Automatically detects and updates file system changes</span>
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tech Stack -->
+        <section class="mb-12">
+            <h3 class="text-2xl font-bold text-gray-800 mb-6">
+                <span data-lang="ja" class="active">技術スタック</span>
+                <span data-lang="en">Technology Stack</span>
+            </h3>
+            <div class="bg-white rounded-xl p-6 shadow-sm">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <h4 class="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                            <span class="w-3 h-3 bg-blue-500 rounded-full"></span>
+                            <span data-lang="ja" class="active">バックエンド</span>
+                            <span data-lang="en">Backend</span>
+                        </h4>
+                        <ul class="space-y-2 text-gray-600 text-sm">
+                            <li class="flex items-center gap-2">
+                                <span class="w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
+                                Python 3.12+ / FastAPI
+                            </li>
+                            <li class="flex items-center gap-2">
+                                <span class="w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
+                                uvicorn (ASGI Server)
+                            </li>
+                            <li class="flex items-center gap-2">
+                                <span class="w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
+                                aiosqlite (Async SQLite)
+                            </li>
+                            <li class="flex items-center gap-2">
+                                <span class="w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
+                                watchdog (File System Monitoring)
+                            </li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-gray-800 mb-3 flex items-center gap-2">
+                            <span class="w-3 h-3 bg-green-500 rounded-full"></span>
+                            <span data-lang="ja" class="active">フロントエンド</span>
+                            <span data-lang="en">Frontend</span>
+                        </h4>
+                        <ul class="space-y-2 text-gray-600 text-sm">
+                            <li class="flex items-center gap-2">
+                                <span class="w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
+                                Vue.js 3 (Reactive UI)
+                            </li>
+                            <li class="flex items-center gap-2">
+                                <span class="w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
+                                Tailwind CSS
+                            </li>
+                            <li class="flex items-center gap-2">
+                                <span class="w-1.5 h-1.5 bg-gray-400 rounded-full"></span>
+                                WebSocket (Real-time)
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Development Process -->
+        <section class="mb-12">
+            <h3 class="text-2xl font-bold text-gray-800 mb-6">
+                <span data-lang="ja" class="active">開発プロセス</span>
+                <span data-lang="en">Development Process</span>
+            </h3>
+            <div class="bg-white rounded-xl p-6 shadow-sm">
+                <div class="space-y-4">
+                    <div class="flex items-start gap-4">
+                        <div class="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">1</div>
+                        <div>
+                            <h4 class="font-bold text-gray-800">
+                                <span data-lang="ja" class="active">要件定義・計画</span>
+                                <span data-lang="en">Requirements & Planning</span>
+                            </h4>
+                            <p class="text-gray-600 text-sm">
+                                <span data-lang="ja" class="active">2つの計画案を並列生成し、最良案を自律選択</span>
+                                <span data-lang="en">Generated two planning approaches in parallel and autonomously selected the best</span>
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-4">
+                        <div class="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">2</div>
+                        <div>
+                            <h4 class="font-bold text-gray-800">
+                                <span data-lang="ja" class="active">実装</span>
+                                <span data-lang="en">Implementation</span>
+                            </h4>
+                            <p class="text-gray-600 text-sm">
+                                <span data-lang="ja" class="active">3つのプロトタイプを並列開発し、パフォーマンス最優先版を選択</span>
+                                <span data-lang="en">Developed three prototypes in parallel and selected the performance-first version</span>
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-4">
+                        <div class="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">3</div>
+                        <div>
+                            <h4 class="font-bold text-gray-800">
+                                <span data-lang="ja" class="active">テスト</span>
+                                <span data-lang="en">Testing</span>
+                            </h4>
+                            <p class="text-gray-600 text-sm">
+                                <span data-lang="ja" class="active">ユニットテスト・統合テスト100%合格、カバレッジ80%以上達成</span>
+                                <span data-lang="en">100% passing unit and integration tests, achieved 80%+ code coverage</span>
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex items-start gap-4">
+                        <div class="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0">4</div>
+                        <div>
+                            <h4 class="font-bold text-gray-800">
+                                <span data-lang="ja" class="active">品質改善</span>
+                                <span data-lang="en">Quality Improvement</span>
+                            </h4>
+                            <p class="text-gray-600 text-sm">
+                                <span data-lang="ja" class="active">パフォーマンス最適化、コードレビュー、リファクタリング</span>
+                                <span data-lang="en">Performance optimization, code review, and refactoring</span>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Metrics -->
+        <section class="mb-12">
+            <h3 class="text-2xl font-bold text-gray-800 mb-6">
+                <span data-lang="ja" class="active">パフォーマンス指標</span>
+                <span data-lang="en">Performance Metrics</span>
+            </h3>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="metric-card rounded-xl p-4 text-white text-center">
+                    <div class="text-3xl font-bold">80%+</div>
+                    <div class="text-sm opacity-80">
+                        <span data-lang="ja" class="active">テストカバレッジ</span>
+                        <span data-lang="en">Test Coverage</span>
+                    </div>
+                </div>
+                <div class="metric-card rounded-xl p-4 text-white text-center">
+                    <div class="text-3xl font-bold">&lt;200ms</div>
+                    <div class="text-sm opacity-80">
+                        <span data-lang="ja" class="active">API応答時間</span>
+                        <span data-lang="en">API Response</span>
+                    </div>
+                </div>
+                <div class="metric-card rounded-xl p-4 text-white text-center">
+                    <div class="text-3xl font-bold">100%</div>
+                    <div class="text-sm opacity-80">
+                        <span data-lang="ja" class="active">テスト合格率</span>
+                        <span data-lang="en">Test Pass Rate</span>
+                    </div>
+                </div>
+                <div class="metric-card rounded-xl p-4 text-white text-center">
+                    <div class="text-3xl font-bold">Async</div>
+                    <div class="text-sm opacity-80">
+                        <span data-lang="ja" class="active">全非同期処理</span>
+                        <span data-lang="en">Fully Async</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Back to App -->
+        <section class="text-center">
+            <a href="./index.html" class="inline-flex items-center gap-2 px-6 py-3 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                </svg>
+                <span data-lang="ja" class="active">アプリに戻る</span>
+                <span data-lang="en">Back to App</span>
+            </a>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-100 mt-12 py-6">
+        <div class="container mx-auto px-4 text-center text-gray-500 text-sm">
+            <p>Generated with Claude Code and AI Agent Workflow</p>
+        </div>
+    </footer>
+
+    <!-- Language Switch Script -->
+    <script>
+        (function() {
+            const STORAGE_KEY = 'preferred-language';
+
+            function setLanguage(lang) {
+                // Update all elements with data-lang attribute
+                document.querySelectorAll('[data-lang]').forEach(el => {
+                    el.classList.remove('active');
+                    if (el.getAttribute('data-lang') === lang) {
+                        el.classList.add('active');
+                    }
+                });
+
+                // Update buttons
+                document.getElementById('lang-ja').classList.toggle('active', lang === 'ja');
+                document.getElementById('lang-en').classList.toggle('active', lang === 'en');
+
+                // Update html lang attribute
+                document.documentElement.lang = lang;
+
+                // Save preference
+                localStorage.setItem(STORAGE_KEY, lang);
+            }
+
+            // Initialize from localStorage or default to Japanese
+            const savedLang = localStorage.getItem(STORAGE_KEY) || 'ja';
+            setLanguage(savedLang);
+
+            // Add event listeners
+            document.getElementById('lang-ja').addEventListener('click', () => setLanguage('ja'));
+            document.getElementById('lang-en').addEventListener('click', () => setLanguage('en'));
+        })();
+    </script>
+</body>
+</html>

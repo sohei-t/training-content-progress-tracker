@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="研修コンテンツ進捗トラッカー - リアルタイムダッシュボード">
+    <title>研修コンテンツ進捗トラッカー</title>
+
+    <!-- プリロード: クリティカルリソース -->
+    <link rel="preconnect" href="https://unpkg.com">
+    <link rel="preconnect" href="https://cdn.tailwindcss.com">
+    <link rel="preconnect" href="https://cdn.jsdelivr.net">
+
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3B82F6',
+                        secondary: '#10B981',
+                        accent: '#F59E0B',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- クリティカルCSS インライン -->
+    <style>
+        /* 初期表示用クリティカルCSS */
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3B82F6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .progress-bar {
+            transition: width 0.3s ease-out;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* カスタムスクロールバー */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a1a1a1;
+        }
+
+        /* 仮想スクロール用 */
+        .virtual-scroll-container {
+            overflow-y: auto;
+            will-change: transform;
+        }
+
+        .virtual-scroll-item {
+            contain: layout style;
+        }
+    </style>
+
+    <!-- カスタムCSS -->
+    <link rel="stylesheet" href="./assets/css/styles.css">
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div id="app" v-cloak>
+        <!-- ヘッダー -->
+        <header class="bg-white shadow-sm sticky top-0 z-50">
+            <div class="container mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <div class="flex items-center gap-4">
+                        <h1 class="text-xl font-bold text-gray-800 cursor-pointer" @click="currentView = 'dashboard'">
+                            研修コンテンツ進捗トラッカー
+                        </h1>
+                        <!-- 接続状態インジケーター -->
+                        <div class="flex items-center gap-2">
+                            <span
+                                :class="[
+                                    'w-2 h-2 rounded-full',
+                                    wsConnected ? 'bg-green-500' : 'bg-red-500'
+                                ]"
+                                :title="wsConnected ? '接続中' : '切断'"
+                            ></span>
+                            <span class="text-xs text-gray-500">
+                                {{ wsConnected ? 'Live' : 'Offline' }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-4">
+                        <!-- 最終更新 -->
+                        <span class="text-sm text-gray-500" v-if="lastUpdated">
+                            更新: {{ formatTime(lastUpdated) }}
+                        </span>
+                        <!-- スキャンボタン -->
+                        <button
+                            @click="triggerScan"
+                            :disabled="isScanning"
+                            class="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-300 text-white rounded-lg transition-colors"
+                        >
+                            <span v-if="isScanning" class="loading-spinner w-4 h-4 border-2"></span>
+                            <span v-else>🔄</span>
+                            {{ isScanning ? 'スキャン中...' : '手動スキャン' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- メインコンテンツ -->
+        <main class="container mx-auto px-4 py-8">
+            <!-- ローディング表示 -->
+            <div v-if="isLoading" class="flex justify-center items-center py-20">
+                <div class="text-center">
+                    <div class="loading-spinner mx-auto mb-4"></div>
+                    <p class="text-gray-500">読み込み中...</p>
+                </div>
+            </div>
+
+            <!-- ダッシュボード -->
+            <div v-else-if="currentView === 'dashboard'" class="fade-in">
+                <!-- サマリーカード -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <h3 class="text-gray-500 text-sm mb-2">全プロジェクト</h3>
+                        <p class="text-3xl font-bold text-gray-800">{{ stats.totalProjects }}</p>
+                    </div>
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <h3 class="text-gray-500 text-sm mb-2">全体進捗</h3>
+                        <p class="text-3xl font-bold text-blue-600">{{ stats.overallProgress.toFixed(1) }}%</p>
+                        <div class="mt-2 h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                                class="h-full bg-blue-500 progress-bar"
+                                :style="{ width: stats.overallProgress + '%' }"
+                            ></div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <h3 class="text-gray-500 text-sm mb-2">完了トピック</h3>
+                        <p class="text-3xl font-bold text-green-600">
+                            {{ stats.completedTopics }}
+                            <span class="text-lg text-gray-400">/ {{ stats.totalTopics }}</span>
+                        </p>
+                    </div>
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <h3 class="text-gray-500 text-sm mb-2">成果物数</h3>
+                        <div class="flex gap-4">
+                            <div class="text-center">
+                                <p class="text-lg font-bold text-green-600">{{ stats.htmlTotal }}</p>
+                                <p class="text-xs text-gray-500">HTML</p>
+                            </div>
+                            <div class="text-center">
+                                <p class="text-lg font-bold text-blue-600">{{ stats.txtTotal }}</p>
+                                <p class="text-xs text-gray-500">TXT</p>
+                            </div>
+                            <div class="text-center">
+                                <p class="text-lg font-bold text-orange-500">{{ stats.mp3Total }}</p>
+                                <p class="text-xs text-gray-500">MP3</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- プロジェクト一覧 -->
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-2xl font-bold text-gray-800">プロジェクト一覧</h2>
+                    <div class="flex gap-2">
+                        <select v-model="sortBy" class="px-3 py-2 border rounded-lg text-sm">
+                            <option value="name">名前順</option>
+                            <option value="progress">進捗順</option>
+                            <option value="updated">更新順</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div
+                        v-for="project in sortedProjects"
+                        :key="project.id"
+                        @click="selectProject(project)"
+                        class="bg-white rounded-lg shadow hover:shadow-lg transition-shadow cursor-pointer overflow-hidden"
+                    >
+                        <div class="p-6">
+                            <h3 class="text-lg font-semibold text-gray-800 mb-2 truncate" :title="project.name">
+                                {{ project.name }}
+                            </h3>
+
+                            <!-- 進捗バー（3色） -->
+                            <div class="h-3 bg-gray-200 rounded-full overflow-hidden flex mb-2">
+                                <div
+                                    class="h-full bg-green-500 transition-all"
+                                    :style="{ width: (project.progress_detail?.html || 0) + '%' }"
+                                    title="HTML"
+                                ></div>
+                                <div
+                                    class="h-full bg-blue-500 transition-all"
+                                    :style="{ width: (project.progress_detail?.txt || 0) + '%' }"
+                                    title="TXT"
+                                ></div>
+                                <div
+                                    class="h-full bg-orange-500 transition-all"
+                                    :style="{ width: (project.progress_detail?.mp3 || 0) + '%' }"
+                                    title="MP3"
+                                ></div>
+                            </div>
+
+                            <div class="flex justify-between items-center text-sm">
+                                <span class="text-gray-600">
+                                    {{ project.completed_topics || 0 }} / {{ project.total_topics || 0 }} トピック
+                                </span>
+                                <span class="font-bold text-blue-600">
+                                    {{ (project.progress || 0).toFixed(1) }}%
+                                </span>
+                            </div>
+
+                            <div class="mt-3 flex gap-2 text-xs">
+                                <span class="px-2 py-1 bg-green-100 text-green-700 rounded">
+                                    HTML: {{ project.html_count || 0 }}
+                                </span>
+                                <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded">
+                                    TXT: {{ project.txt_count || 0 }}
+                                </span>
+                                <span class="px-2 py-1 bg-orange-100 text-orange-700 rounded">
+                                    MP3: {{ project.mp3_count || 0 }}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="px-6 py-3 bg-gray-50 border-t flex justify-between items-center">
+                            <span class="text-xs text-gray-500" v-if="project.last_scanned_at">
+                                {{ formatDateTime(project.last_scanned_at) }}
+                            </span>
+                            <button
+                                @click.stop="openFolder(project.path)"
+                                class="text-gray-500 hover:text-gray-700"
+                                title="フォルダを開く"
+                            >
+                                📁
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 空状態 -->
+                <div v-if="projects.length === 0" class="text-center py-20">
+                    <p class="text-gray-500 text-lg">プロジェクトが見つかりません</p>
+                    <button
+                        @click="triggerScan"
+                        class="mt-4 px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                    >
+                        スキャンを実行
+                    </button>
+                </div>
+            </div>
+
+            <!-- プロジェクト詳細 -->
+            <div v-else-if="currentView === 'detail' && selectedProject" class="fade-in">
+                <!-- ブレッドクラム -->
+                <div class="mb-6">
+                    <button @click="currentView = 'dashboard'" class="text-blue-500 hover:text-blue-600">
+                        ← ダッシュボードに戻る
+                    </button>
+                </div>
+
+                <!-- プロジェクトヘッダー -->
+                <div class="bg-white rounded-lg shadow p-6 mb-6">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h2 class="text-2xl font-bold text-gray-800 mb-2">{{ selectedProject.name }}</h2>
+                            <p class="text-gray-500 text-sm">{{ selectedProject.path }}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-4xl font-bold text-blue-600">
+                                {{ (selectedProject.progress || 0).toFixed(1) }}%
+                            </p>
+                            <p class="text-sm text-gray-500">
+                                {{ selectedProject.completed_topics || 0 }} / {{ selectedProject.total_topics || 0 }} 完了
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- 進捗バー -->
+                    <div class="mt-4 h-4 bg-gray-200 rounded-full overflow-hidden flex">
+                        <div
+                            class="h-full bg-green-500"
+                            :style="{ width: (selectedProject.progress_detail?.html || 0) + '%' }"
+                        ></div>
+                        <div
+                            class="h-full bg-blue-500"
+                            :style="{ width: (selectedProject.progress_detail?.txt || 0) + '%' }"
+                        ></div>
+                        <div
+                            class="h-full bg-orange-500"
+                            :style="{ width: (selectedProject.progress_detail?.mp3 || 0) + '%' }"
+                        ></div>
+                    </div>
+                    <div class="mt-2 flex gap-4 text-sm">
+                        <span class="flex items-center gap-1">
+                            <span class="w-3 h-3 bg-green-500 rounded"></span>
+                            HTML: {{ selectedProject.html_count || 0 }}
+                        </span>
+                        <span class="flex items-center gap-1">
+                            <span class="w-3 h-3 bg-blue-500 rounded"></span>
+                            TXT: {{ selectedProject.txt_count || 0 }}
+                        </span>
+                        <span class="flex items-center gap-1">
+                            <span class="w-3 h-3 bg-orange-500 rounded"></span>
+                            MP3: {{ selectedProject.mp3_count || 0 }}
+                        </span>
+                    </div>
+                </div>
+
+                <!-- フィルター -->
+                <div class="flex gap-4 mb-6">
+                    <button
+                        v-for="filter in ['all', 'completed', 'in_progress', 'not_started']"
+                        :key="filter"
+                        @click="topicFilter = filter"
+                        :class="[
+                            'px-4 py-2 rounded-lg transition-colors',
+                            topicFilter === filter
+                                ? 'bg-blue-500 text-white'
+                                : 'bg-white text-gray-600 hover:bg-gray-100'
+                        ]"
+                    >
+                        {{ filterLabels[filter] }}
+                        <span class="ml-1 text-xs opacity-75">({{ getFilterCount(filter) }})</span>
+                    </button>
+                </div>
+
+                <!-- トピック一覧（仮想スクロール） -->
+                <div class="bg-white rounded-lg shadow overflow-hidden">
+                    <div class="virtual-scroll-container" style="max-height: 600px;">
+                        <div
+                            v-for="topic in filteredTopics"
+                            :key="topic.id"
+                            class="virtual-scroll-item p-4 border-b hover:bg-gray-50 transition-colors"
+                        >
+                            <div class="flex justify-between items-center">
+                                <div class="flex-1">
+                                    <div class="flex items-center gap-2">
+                                        <span
+                                            :class="[
+                                                'w-2 h-2 rounded-full',
+                                                topic.status === 'completed' ? 'bg-green-500' :
+                                                topic.status === 'in_progress' ? 'bg-yellow-500' : 'bg-gray-300'
+                                            ]"
+                                        ></span>
+                                        <span class="font-medium text-gray-800">
+                                            {{ topic.topic_id || topic.base_name }}
+                                        </span>
+                                        <span class="text-gray-500">-</span>
+                                        <span class="text-gray-600">
+                                            {{ topic.title || topic.base_name }}
+                                        </span>
+                                    </div>
+                                    <p class="text-xs text-gray-400 mt-1" v-if="topic.chapter">
+                                        {{ topic.chapter }}
+                                    </p>
+                                </div>
+
+                                <div class="flex gap-2">
+                                    <span
+                                        :class="[
+                                            'w-8 h-8 flex items-center justify-center rounded text-sm',
+                                            topic.has_html ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
+                                        ]"
+                                        title="HTML"
+                                    >
+                                        {{ topic.has_html ? '✓' : '□' }}
+                                    </span>
+                                    <span
+                                        :class="[
+                                            'w-8 h-8 flex items-center justify-center rounded text-sm',
+                                            topic.has_txt ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'
+                                        ]"
+                                        title="TXT"
+                                    >
+                                        {{ topic.has_txt ? '✓' : '□' }}
+                                    </span>
+                                    <span
+                                        :class="[
+                                            'w-8 h-8 flex items-center justify-center rounded text-sm',
+                                            topic.has_mp3 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-400'
+                                        ]"
+                                        title="MP3"
+                                    >
+                                        {{ topic.has_mp3 ? '✓' : '□' }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- サマリー -->
+                <div class="mt-6 grid grid-cols-3 gap-4">
+                    <div class="bg-green-50 rounded-lg p-4 text-center">
+                        <p class="text-2xl font-bold text-green-600">{{ topicSummary.completed }}</p>
+                        <p class="text-sm text-green-700">完了</p>
+                    </div>
+                    <div class="bg-yellow-50 rounded-lg p-4 text-center">
+                        <p class="text-2xl font-bold text-yellow-600">{{ topicSummary.in_progress }}</p>
+                        <p class="text-sm text-yellow-700">進行中</p>
+                    </div>
+                    <div class="bg-gray-50 rounded-lg p-4 text-center">
+                        <p class="text-2xl font-bold text-gray-600">{{ topicSummary.not_started }}</p>
+                        <p class="text-sm text-gray-700">未着手</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- トースト通知 -->
+        <div class="fixed bottom-4 right-4 space-y-2 z-50">
+            <div
+                v-for="toast in toasts"
+                :key="toast.id"
+                :class="[
+                    'px-4 py-3 rounded-lg shadow-lg fade-in',
+                    toast.type === 'success' ? 'bg-green-500 text-white' :
+                    toast.type === 'error' ? 'bg-red-500 text-white' :
+                    'bg-blue-500 text-white'
+                ]"
+            >
+                {{ toast.message }}
+            </div>
+        </div>
+    </div>
+
+    <!-- Vue.js 3 (CDN) -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+
+    <!-- アプリケーションスクリプト -->
+    <script src="./assets/js/api.js"></script>
+    <script src="./assets/js/websocket.js"></script>
+    <script src="./assets/js/app.js"></script>
+</body>
+</html>
