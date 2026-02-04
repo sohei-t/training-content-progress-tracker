@@ -227,30 +227,57 @@ class AsyncScanner:
             result.duration_ms = (datetime.now() - start_time).total_seconds() * 1000
             return result
 
-    async def _detect_topics_from_files(self, content_path: Path) -> List[ParsedTopic]:
-        """ファイルシステムからトピックを検出"""
+    async def _detect_topics_from_files(self, content_path: Path, subfolder: str = "") -> List[ParsedTopic]:
+        """ファイルシステムからトピックを再帰的に検出（数値で始まるファイルのみ）"""
+        import re
         topics = []
-        seen_bases = set()
+        seen_bases = set()  # (subfolder, base_name) のペアで重複チェック
 
-        for file in content_path.iterdir():
-            if file.suffix in ['.html', '.txt', '.mp3']:
-                base_name = file.stem
-                if base_name not in seen_bases:
-                    seen_bases.add(base_name)
+        current_path = content_path / subfolder if subfolder else content_path
+
+        if not current_path.exists():
+            return topics
+
+        for item in current_path.iterdir():
+            # サブフォルダの場合は再帰的にスキャン
+            if item.is_dir():
+                # 隠しフォルダと特殊フォルダをスキップ
+                if item.name.startswith('.') or item.name in ['__pycache__', 'node_modules']:
+                    continue
+
+                # サブフォルダパスを構築
+                new_subfolder = f"{subfolder}/{item.name}" if subfolder else item.name
+                sub_topics = await self._detect_topics_from_files(content_path, new_subfolder)
+                topics.extend(sub_topics)
+                continue
+
+            # ファイルの場合
+            if item.suffix in ['.html', '.txt', '.mp3']:
+                base_name = item.stem
+
+                # 数値で始まるファイル名のみを対象とする
+                # 例: 01-01_xxx, 1_xxx, 01_xxx など
+                if not re.match(r'^\d', base_name):
+                    continue
+
+                # 重複チェック（サブフォルダ + ファイル名）
+                key = (subfolder, base_name)
+                if key not in seen_bases:
+                    seen_bases.add(key)
 
                     # トピックID抽出
-                    import re
                     match = re.match(r'^(\d{2}-\d{2})', base_name)
                     topic_id = match.group(1) if match else base_name[:5]
 
                     topics.append(ParsedTopic(
                         topic_id=topic_id,
-                        chapter="",
+                        chapter=subfolder if subfolder else "",  # サブフォルダ名をchapterとして使用
                         title=base_name,
-                        base_name=base_name
+                        base_name=base_name,
+                        subfolder=subfolder
                     ))
 
-        return sorted(topics, key=lambda t: t.base_name)
+        return sorted(topics, key=lambda t: (t.subfolder, t.base_name))
 
     async def _scan_topic_files(
         self,
@@ -258,12 +285,15 @@ class AsyncScanner:
         topic: ParsedTopic,
         content_path: Path
     ) -> Dict:
-        """トピックのファイル状態をスキャン"""
+        """トピックのファイル状態をスキャン（数値で始まるファイルのみ、サブフォルダ対応）"""
+        import re
+
         result = {
             'base_name': topic.base_name,
             'topic_id': topic.topic_id,
             'chapter': topic.chapter,
             'title': topic.title,
+            'subfolder': topic.subfolder,
             'has_html': False,
             'has_txt': False,
             'has_mp3': False,
@@ -274,18 +304,30 @@ class AsyncScanner:
             'changes': 0
         }
 
+        # 数値で始まるファイル名のみを対象とする
+        if not re.match(r'^\d', topic.base_name):
+            return result
+
+        # サブフォルダを考慮したパスを計算
+        actual_content_path = content_path / topic.subfolder if topic.subfolder else content_path
+
         # ファイル存在チェックとハッシュ計算
         for ext in ['html', 'txt', 'mp3']:
-            file_path = content_path / f"{topic.base_name}.{ext}"
+            file_path = actual_content_path / f"{topic.base_name}.{ext}"
 
-            # プレフィックスマッチも試みる
+            # プレフィックスマッチも試みる（数値で始まるファイルのみ）
             if not file_path.exists():
                 prefix = topic.base_name.split('_')[0]  # "01-01"
-                matches = list(content_path.glob(f"{prefix}*.{ext}"))
-                if matches:
-                    file_path = matches[0]
+                # 数値プレフィックスの場合のみマッチを試みる
+                if re.match(r'^\d', prefix):
+                    matches = [
+                        m for m in actual_content_path.glob(f"{prefix}*.{ext}")
+                        if re.match(r'^\d', m.stem)  # 数値で始まるファイルのみ
+                    ]
+                    if matches:
+                        file_path = matches[0]
 
-            if file_path.exists():
+            if file_path.exists() and re.match(r'^\d', file_path.stem):
                 result[f'has_{ext}'] = True
                 result['files_scanned'] += 1
 
@@ -306,6 +348,7 @@ class AsyncScanner:
             topic_id=topic.topic_id,
             chapter=topic.chapter,
             title=topic.title,
+            subfolder=topic.subfolder,
             has_html=result['has_html'],
             has_txt=result['has_txt'],
             has_mp3=result['has_mp3'],

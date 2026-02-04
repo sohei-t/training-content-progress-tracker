@@ -309,6 +309,175 @@ async def get_stats():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ========== 納品先マスターAPI ==========
+
+@router.get("/destinations")
+async def get_destinations():
+    """納品先一覧取得"""
+    try:
+        db = await get_database()
+        destinations = await db.get_all_destinations()
+        return {"destinations": destinations}
+    except Exception as e:
+        logger.error(f"Error getting destinations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/destinations")
+async def create_destination(data: dict):
+    """納品先作成"""
+    try:
+        name = data.get('name')
+        if not name:
+            raise HTTPException(status_code=400, detail="名前は必須です")
+
+        display_order = data.get('display_order', 0)
+
+        db = await get_database()
+        destination_id = await db.create_destination(name, display_order)
+        destination = await db.get_destination(destination_id)
+
+        return {"destination": destination}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating destination: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/destinations/{destination_id}")
+async def update_destination(destination_id: int, data: dict):
+    """納品先更新"""
+    try:
+        name = data.get('name')
+        if not name:
+            raise HTTPException(status_code=400, detail="名前は必須です")
+
+        display_order = data.get('display_order')
+
+        db = await get_database()
+        await db.update_destination(destination_id, name, display_order)
+        destination = await db.get_destination(destination_id)
+
+        return {"destination": destination}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating destination: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/destinations/{destination_id}")
+async def delete_destination(destination_id: int):
+    """納品先削除"""
+    try:
+        db = await get_database()
+        await db.delete_destination(destination_id)
+        return {"status": "deleted"}
+    except Exception as e:
+        logger.error(f"Error deleting destination: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== 音声変換エンジンマスターAPI ==========
+
+@router.get("/tts-engines")
+async def get_tts_engines():
+    """音声変換エンジン一覧取得"""
+    try:
+        db = await get_database()
+        tts_engines = await db.get_all_tts_engines()
+        return {"tts_engines": tts_engines}
+    except Exception as e:
+        logger.error(f"Error getting TTS engines: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/tts-engines")
+async def create_tts_engine(data: dict):
+    """音声変換エンジン作成"""
+    try:
+        name = data.get('name')
+        if not name:
+            raise HTTPException(status_code=400, detail="名前は必須です")
+
+        display_order = data.get('display_order', 0)
+
+        db = await get_database()
+        tts_engine_id = await db.create_tts_engine(name, display_order)
+        tts_engine = await db.get_tts_engine(tts_engine_id)
+
+        return {"tts_engine": tts_engine}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating TTS engine: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/tts-engines/{tts_engine_id}")
+async def update_tts_engine(tts_engine_id: int, data: dict):
+    """音声変換エンジン更新"""
+    try:
+        name = data.get('name')
+        if not name:
+            raise HTTPException(status_code=400, detail="名前は必須です")
+
+        display_order = data.get('display_order')
+
+        db = await get_database()
+        await db.update_tts_engine(tts_engine_id, name, display_order)
+        tts_engine = await db.get_tts_engine(tts_engine_id)
+
+        return {"tts_engine": tts_engine}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating TTS engine: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/tts-engines/{tts_engine_id}")
+async def delete_tts_engine(tts_engine_id: int):
+    """音声変換エンジン削除"""
+    try:
+        db = await get_database()
+        await db.delete_tts_engine(tts_engine_id)
+        return {"status": "deleted"}
+    except Exception as e:
+        logger.error(f"Error deleting TTS engine: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== プロジェクト設定API ==========
+
+@router.put("/projects/{project_id}/settings")
+async def update_project_settings(project_id: int, data: dict):
+    """プロジェクト設定更新（納品先・音声変換エンジン）"""
+    try:
+        db = await get_database()
+
+        # プロジェクトの存在確認
+        project = await db.get_project(project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        destination_id = data.get('destination_id')
+        tts_engine_id = data.get('tts_engine_id')
+
+        await db.update_project_settings(project_id, destination_id, tts_engine_id)
+
+        # 更新後のプロジェクトを取得
+        updated_project = await db.get_project(project_id)
+
+        return {"project": updated_project}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating project settings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ========== ヘルスチェック ==========
 
 @router.get("/health")
