@@ -138,9 +138,11 @@ class Database:
                     has_html INTEGER DEFAULT 0 CHECK(has_html IN (0, 1)),
                     has_txt INTEGER DEFAULT 0 CHECK(has_txt IN (0, 1)),
                     has_mp3 INTEGER DEFAULT 0 CHECK(has_mp3 IN (0, 1)),
+                    has_ssml INTEGER DEFAULT 0 CHECK(has_ssml IN (0, 1)),
                     html_hash TEXT,
                     txt_hash TEXT,
                     mp3_hash TEXT,
+                    ssml_hash TEXT,
                     updated_at TEXT DEFAULT (datetime('now')),
                     UNIQUE(project_id, base_name, subfolder)
                 )
@@ -265,6 +267,23 @@ class Database:
             await self._connection.execute("ALTER TABLE topics_new RENAME TO topics")
 
             logger.info("Topics table migration completed")
+            # 再度カラム情報を取得
+            cursor = await self._connection.execute("PRAGMA table_info(topics)")
+            topic_columns = [row[1] for row in await cursor.fetchall()]
+
+        # has_ssml カラムが存在しない場合は追加
+        if 'has_ssml' not in topic_columns:
+            await self._connection.execute(
+                "ALTER TABLE topics ADD COLUMN has_ssml INTEGER DEFAULT 0"
+            )
+            logger.info("Added has_ssml column to topics table")
+
+        # ssml_hash カラムが存在しない場合は追加
+        if 'ssml_hash' not in topic_columns:
+            await self._connection.execute(
+                "ALTER TABLE topics ADD COLUMN ssml_hash TEXT"
+            )
+            logger.info("Added ssml_hash column to topics table")
 
     # ========== 納品先マスター操作 ==========
 
@@ -499,18 +518,20 @@ class Database:
         has_html: bool = False,
         has_txt: bool = False,
         has_mp3: bool = False,
+        has_ssml: bool = False,
         html_hash: Optional[str] = None,
         txt_hash: Optional[str] = None,
-        mp3_hash: Optional[str] = None
+        mp3_hash: Optional[str] = None,
+        ssml_hash: Optional[str] = None
     ) -> int:
         """トピックをUPSERT"""
         async with self._lock:
             cursor = await self._connection.execute("""
                 INSERT INTO topics (
                     project_id, base_name, topic_id, chapter, title, subfolder,
-                    has_html, has_txt, has_mp3, html_hash, txt_hash, mp3_hash
+                    has_html, has_txt, has_mp3, has_ssml, html_hash, txt_hash, mp3_hash, ssml_hash
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(project_id, base_name, subfolder) DO UPDATE SET
                     topic_id = COALESCE(excluded.topic_id, topic_id),
                     chapter = COALESCE(excluded.chapter, chapter),
@@ -518,15 +539,17 @@ class Database:
                     has_html = excluded.has_html,
                     has_txt = excluded.has_txt,
                     has_mp3 = excluded.has_mp3,
+                    has_ssml = excluded.has_ssml,
                     html_hash = excluded.html_hash,
                     txt_hash = excluded.txt_hash,
                     mp3_hash = excluded.mp3_hash,
+                    ssml_hash = excluded.ssml_hash,
                     updated_at = datetime('now')
                 RETURNING id
             """, (
                 project_id, base_name, topic_id, chapter, title, subfolder or "",
-                int(has_html), int(has_txt), int(has_mp3),
-                html_hash, txt_hash, mp3_hash
+                int(has_html), int(has_txt), int(has_mp3), int(has_ssml),
+                html_hash, txt_hash, mp3_hash, ssml_hash
             ))
             row = await cursor.fetchone()
             return row[0]
