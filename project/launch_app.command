@@ -48,9 +48,9 @@ fi
 
 # データディレクトリ・DB初期化
 mkdir -p data
-if [ ! -f "data/progress.db" ]; then
+if [ ! -f "data/progress_tracker.db" ]; then
     echo "🗄️ データベースを初期化中..."
-    python3 -c "from backend.database import init_db; import asyncio; asyncio.run(init_db())"
+    python3 -c "from backend.database import get_database; import asyncio; asyncio.run(get_database())"
     echo "✅ データベース初期化完了"
 fi
 
