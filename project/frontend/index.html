@@ -21,6 +21,9 @@
                         primary: '#3B82F6',
                         secondary: '#10B981',
                         accent: '#F59E0B',
+                    },
+                    gridTemplateColumns: {
+                        '16': 'repeat(16, minmax(0, 1fr))',
                     }
                 }
             }
@@ -113,10 +116,35 @@
         <header class="bg-white shadow-sm sticky top-0 z-50">
             <div class="container mx-auto px-4 py-4">
                 <div class="flex justify-between items-center">
-                    <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-6">
                         <h1 class="text-xl font-bold text-gray-800 cursor-pointer" @click="currentView = 'dashboard'">
                             📊 コンテンツ進捗管理
                         </h1>
+                        <!-- ナビゲーションタブ -->
+                        <nav class="flex gap-2">
+                            <button
+                                @click="currentView = 'dashboard'"
+                                :class="[
+                                    'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                                    currentView === 'dashboard' || currentView === 'detail'
+                                        ? 'bg-blue-100 text-blue-700'
+                                        : 'text-gray-600 hover:bg-gray-100'
+                                ]"
+                            >
+                                📋 ダッシュボード
+                            </button>
+                            <button
+                                @click="currentView = 'settings'"
+                                :class="[
+                                    'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                                    currentView === 'settings'
+                                        ? 'bg-blue-100 text-blue-700'
+                                        : 'text-gray-600 hover:bg-gray-100'
+                                ]"
+                            >
+                                ⚙️ 設定
+                            </button>
+                        </nav>
                         <!-- 接続状態インジケーター -->
                         <div class="flex items-center gap-2">
                             <span
@@ -257,8 +285,24 @@
                             </button>
                         </div>
 
-                        <!-- 表示切り替え＆ソート -->
-                        <div class="flex gap-2 items-center">
+                        <!-- 表示切り替え＆ソート＆フィルター -->
+                        <div class="flex gap-2 items-center flex-wrap">
+                            <!-- 納品先フィルター -->
+                            <select v-model="destinationFilter" class="px-3 py-2 border rounded-lg text-sm">
+                                <option value="all">📦 納品先: 全て</option>
+                                <option v-for="dest in destinations" :key="dest.id" :value="dest.id">
+                                    📦 {{ dest.name }}
+                                </option>
+                            </select>
+
+                            <!-- 音声変換フィルター -->
+                            <select v-model="ttsEngineFilter" class="px-3 py-2 border rounded-lg text-sm">
+                                <option value="all">🔊 音声: 全て</option>
+                                <option v-for="tts in ttsEngines" :key="tts.id" :value="tts.id">
+                                    🔊 {{ tts.name }}
+                                </option>
+                            </select>
+
                             <select v-model="sortBy" class="px-3 py-2 border rounded-lg text-sm">
                                 <option value="name">名前順</option>
                                 <option value="progress">進捗順</option>
@@ -399,32 +443,69 @@
                                     MP3: {{ project.mp3_count || 0 }}
                                 </span>
                             </div>
+
+                            <!-- 納品先・音声変換バッジ -->
+                            <div class="mt-3 flex gap-2 text-xs flex-wrap">
+                                <span v-if="project.destination_name" class="px-2 py-1 bg-purple-100 text-purple-700 rounded">
+                                    📦 {{ project.destination_name }}
+                                </span>
+                                <span v-if="project.tts_engine_name" class="px-2 py-1 bg-indigo-100 text-indigo-700 rounded">
+                                    🔊 {{ project.tts_engine_name }}
+                                </span>
+                            </div>
                         </div>
 
-                        <div class="px-6 py-3 bg-gray-50 border-t flex justify-between items-center">
-                            <span class="text-xs text-gray-500" v-if="project.last_scanned_at">
-                                {{ formatDateTime(project.last_scanned_at) }}
-                            </span>
-                            <button
-                                @click.stop="openFolder(project.path)"
-                                class="text-gray-500 hover:text-gray-700"
-                                title="フォルダを開く"
-                            >
-                                📁
-                            </button>
+                        <div class="px-6 py-3 bg-gray-50 border-t">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-xs text-gray-500" v-if="project.last_scanned_at">
+                                    {{ formatDateTime(project.last_scanned_at) }}
+                                </span>
+                                <button
+                                    @click.stop="openFolder(project.path)"
+                                    class="text-gray-500 hover:text-gray-700"
+                                    title="フォルダを開く"
+                                >
+                                    📁
+                                </button>
+                            </div>
+                            <!-- 設定ドロップダウン -->
+                            <div class="flex gap-2 text-xs" @click.stop>
+                                <select
+                                    :value="project.destination_id || ''"
+                                    @change="onDestinationChange(project.id, $event.target.value)"
+                                    class="flex-1 px-2 py-1 border rounded text-xs"
+                                >
+                                    <option value="">📦 納品先を選択</option>
+                                    <option v-for="dest in destinations" :key="dest.id" :value="dest.id">
+                                        {{ dest.name }}
+                                    </option>
+                                </select>
+                                <select
+                                    :value="project.tts_engine_id || ''"
+                                    @change="onTtsEngineChange(project.id, $event.target.value)"
+                                    class="flex-1 px-2 py-1 border rounded text-xs"
+                                >
+                                    <option value="">🔊 音声変換を選択</option>
+                                    <option v-for="tts in ttsEngines" :key="tts.id" :value="tts.id">
+                                        {{ tts.name }}
+                                    </option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- リスト表示 -->
-                <div v-else class="bg-white rounded-lg shadow overflow-hidden">
+                <div v-else class="bg-white rounded-lg shadow overflow-hidden overflow-x-auto">
                     <!-- リストヘッダー -->
-                    <div class="grid grid-cols-12 gap-4 px-6 py-3 bg-gray-50 border-b text-sm font-medium text-gray-500">
-                        <div class="col-span-4">プロジェクト名</div>
+                    <div class="grid grid-cols-16 gap-2 px-4 py-3 bg-gray-50 border-b text-sm font-medium text-gray-500 min-w-[1000px]">
+                        <div class="col-span-3">プロジェクト名</div>
                         <div class="col-span-2 text-center">進捗</div>
                         <div class="col-span-1 text-center">HTML</div>
                         <div class="col-span-1 text-center">TXT</div>
                         <div class="col-span-1 text-center">MP3</div>
+                        <div class="col-span-2 text-center">納品先</div>
+                        <div class="col-span-3 text-center">音声変換</div>
                         <div class="col-span-2 text-center">トピック</div>
                         <div class="col-span-1 text-center">状態</div>
                     </div>
@@ -434,9 +515,9 @@
                         v-for="project in sortedFilteredProjects"
                         :key="project.id"
                         @click="selectProject(project)"
-                        class="grid grid-cols-12 gap-4 px-6 py-4 border-b hover:bg-blue-50 cursor-pointer transition-colors list-item-hover"
+                        class="grid grid-cols-16 gap-2 px-4 py-3 border-b hover:bg-blue-50 cursor-pointer transition-colors list-item-hover min-w-[1000px]"
                     >
-                        <div class="col-span-4 flex items-center gap-2">
+                        <div class="col-span-3 flex items-center gap-2">
                             <span class="font-medium text-gray-800 truncate" :title="project.name">
                                 {{ project.name }}
                             </span>
@@ -453,7 +534,7 @@
                                     ></div>
                                 </div>
                                 <span :class="[
-                                    'text-sm font-bold w-14 text-right',
+                                    'text-sm font-bold w-12 text-right',
                                     project.progress >= 100 ? 'text-green-600' : 'text-blue-600'
                                 ]">
                                     {{ project.progress.toFixed(1) }}%
@@ -468,6 +549,30 @@
                         </div>
                         <div class="col-span-1 text-center">
                             <span class="text-sm text-orange-500">{{ project.mp3_count }}</span>
+                        </div>
+                        <div class="col-span-2 text-center" @click.stop>
+                            <select
+                                :value="project.destination_id || ''"
+                                @change="onDestinationChange(project.id, $event.target.value)"
+                                class="w-full px-2 py-1 border rounded text-xs"
+                            >
+                                <option value="">-</option>
+                                <option v-for="dest in destinations" :key="dest.id" :value="dest.id">
+                                    {{ dest.name }}
+                                </option>
+                            </select>
+                        </div>
+                        <div class="col-span-3 text-center" @click.stop>
+                            <select
+                                :value="project.tts_engine_id || ''"
+                                @change="onTtsEngineChange(project.id, $event.target.value)"
+                                class="w-full px-2 py-1 border rounded text-xs"
+                            >
+                                <option value="">-</option>
+                                <option v-for="tts in ttsEngines" :key="tts.id" :value="tts.id">
+                                    {{ tts.name }}
+                                </option>
+                            </select>
                         </div>
                         <div class="col-span-2 text-center text-sm text-gray-600">
                             {{ project.completed_topics }} / {{ project.total_topics }}
@@ -584,67 +689,166 @@
                     </button>
                 </div>
 
-                <!-- トピック一覧（仮想スクロール） -->
+                <!-- トピック一覧（サブフォルダ階層表示） -->
                 <div class="bg-white rounded-lg shadow overflow-hidden">
                     <div class="virtual-scroll-container" style="max-height: 600px;">
-                        <div
-                            v-for="topic in filteredTopics"
-                            :key="topic.id"
-                            class="virtual-scroll-item p-4 border-b hover:bg-gray-50 transition-colors"
-                        >
-                            <div class="flex justify-between items-center">
-                                <div class="flex-1">
-                                    <div class="flex items-center gap-2">
+                        <!-- フォルダごとにグループ化 -->
+                        <div v-for="folder in groupedTopics" :key="folder.key" class="border-b last:border-b-0">
+                            <!-- フォルダヘッダー（クリックで展開/折りたたみ） -->
+                            <div
+                                @click="toggleFolder(folder.key)"
+                                class="px-4 py-3 bg-gray-50 hover:bg-gray-100 cursor-pointer flex justify-between items-center transition-colors"
+                            >
+                                <div class="flex items-center gap-3">
+                                    <!-- 展開/折りたたみアイコン -->
+                                    <span class="text-gray-400 text-sm transition-transform" :class="{ 'rotate-90': isFolderExpanded(folder.key) }">
+                                        ▶
+                                    </span>
+                                    <!-- フォルダアイコン -->
+                                    <span class="text-yellow-500">📁</span>
+                                    <!-- フォルダ名 -->
+                                    <span class="font-medium text-gray-700">{{ folder.name }}</span>
+                                    <!-- トピック数 -->
+                                    <span class="text-xs text-gray-500">({{ folder.topics.length }}件)</span>
+                                </div>
+                                <div class="flex items-center gap-4">
+                                    <!-- 進捗バー -->
+                                    <div class="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                        <div
+                                            class="h-full bg-green-500 transition-all duration-300"
+                                            :style="{ width: folder.progress + '%' }"
+                                        ></div>
+                                    </div>
+                                    <span class="text-sm text-gray-600 w-12 text-right">{{ folder.progress }}%</span>
+                                    <!-- ステータスバッジ -->
+                                    <div class="flex gap-1 text-xs">
+                                        <span class="px-2 py-0.5 bg-green-100 text-green-700 rounded">{{ folder.completed }}</span>
+                                        <span class="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded">{{ folder.in_progress }}</span>
+                                        <span class="px-2 py-0.5 bg-gray-100 text-gray-700 rounded">{{ folder.not_started }}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- トピックリスト（展開時のみ表示） -->
+                            <div v-show="isFolderExpanded(folder.key)">
+                                <div
+                                    v-for="topic in folder.topics"
+                                    :key="topic.id"
+                                    class="virtual-scroll-item p-4 pl-12 border-t hover:bg-gray-50 transition-colors"
+                                >
+                                    <div class="flex justify-between items-center">
+                                        <div class="flex-1">
+                                            <div class="flex items-center gap-2">
+                                                <span
+                                                    :class="[
+                                                        'w-2 h-2 rounded-full',
+                                                        topic.status === 'completed' ? 'bg-green-500' :
+                                                        topic.status === 'in_progress' ? 'bg-yellow-500' : 'bg-gray-300'
+                                                    ]"
+                                                ></span>
+                                                <span class="font-medium text-gray-800">
+                                                    {{ topic.topic_id || topic.base_name }}
+                                                </span>
+                                                <span class="text-gray-500">-</span>
+                                                <span class="text-gray-600">
+                                                    {{ topic.title || topic.base_name }}
+                                                </span>
+                                                <!-- 完了マーク -->
+                                                <span v-if="topic.status === 'completed'" class="text-green-500 text-lg">✓</span>
+                                            </div>
+                                        </div>
+
+                                        <div class="flex gap-2">
+                                            <span
+                                                :class="[
+                                                    'w-8 h-8 flex items-center justify-center rounded text-sm',
+                                                    topic.has_html ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
+                                                ]"
+                                                title="HTML"
+                                            >
+                                                {{ topic.has_html ? '✓' : '□' }}
+                                            </span>
+                                            <span
+                                                :class="[
+                                                    'w-8 h-8 flex items-center justify-center rounded text-sm',
+                                                    topic.has_txt ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'
+                                                ]"
+                                                title="TXT"
+                                            >
+                                                {{ topic.has_txt ? '✓' : '□' }}
+                                            </span>
+                                            <span
+                                                :class="[
+                                                    'w-8 h-8 flex items-center justify-center rounded text-sm',
+                                                    topic.has_mp3 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-400'
+                                                ]"
+                                                title="MP3"
+                                            >
+                                                {{ topic.has_mp3 ? '✓' : '□' }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- サブフォルダがない場合のフォールバック表示 -->
+                        <div v-if="groupedTopics.length === 0 && filteredTopics.length > 0">
+                            <div
+                                v-for="topic in filteredTopics"
+                                :key="topic.id"
+                                class="virtual-scroll-item p-4 border-b hover:bg-gray-50 transition-colors"
+                            >
+                                <div class="flex justify-between items-center">
+                                    <div class="flex-1">
+                                        <div class="flex items-center gap-2">
+                                            <span
+                                                :class="[
+                                                    'w-2 h-2 rounded-full',
+                                                    topic.status === 'completed' ? 'bg-green-500' :
+                                                    topic.status === 'in_progress' ? 'bg-yellow-500' : 'bg-gray-300'
+                                                ]"
+                                            ></span>
+                                            <span class="font-medium text-gray-800">
+                                                {{ topic.topic_id || topic.base_name }}
+                                            </span>
+                                            <span class="text-gray-500">-</span>
+                                            <span class="text-gray-600">
+                                                {{ topic.title || topic.base_name }}
+                                            </span>
+                                            <span v-if="topic.status === 'completed'" class="text-green-500 text-lg">✓</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex gap-2">
                                         <span
                                             :class="[
-                                                'w-2 h-2 rounded-full',
-                                                topic.status === 'completed' ? 'bg-green-500' :
-                                                topic.status === 'in_progress' ? 'bg-yellow-500' : 'bg-gray-300'
+                                                'w-8 h-8 flex items-center justify-center rounded text-sm',
+                                                topic.has_html ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
                                             ]"
-                                        ></span>
-                                        <span class="font-medium text-gray-800">
-                                            {{ topic.topic_id || topic.base_name }}
+                                            title="HTML"
+                                        >
+                                            {{ topic.has_html ? '✓' : '□' }}
                                         </span>
-                                        <span class="text-gray-500">-</span>
-                                        <span class="text-gray-600">
-                                            {{ topic.title || topic.base_name }}
+                                        <span
+                                            :class="[
+                                                'w-8 h-8 flex items-center justify-center rounded text-sm',
+                                                topic.has_txt ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'
+                                            ]"
+                                            title="TXT"
+                                        >
+                                            {{ topic.has_txt ? '✓' : '□' }}
                                         </span>
-                                        <!-- 完了マーク -->
-                                        <span v-if="topic.status === 'completed'" class="text-green-500 text-lg">✓</span>
+                                        <span
+                                            :class="[
+                                                'w-8 h-8 flex items-center justify-center rounded text-sm',
+                                                topic.has_mp3 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-400'
+                                            ]"
+                                            title="MP3"
+                                        >
+                                            {{ topic.has_mp3 ? '✓' : '□' }}
+                                        </span>
                                     </div>
-                                    <p class="text-xs text-gray-400 mt-1" v-if="topic.chapter">
-                                        {{ topic.chapter }}
-                                    </p>
-                                </div>
-
-                                <div class="flex gap-2">
-                                    <span
-                                        :class="[
-                                            'w-8 h-8 flex items-center justify-center rounded text-sm',
-                                            topic.has_html ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
-                                        ]"
-                                        title="HTML"
-                                    >
-                                        {{ topic.has_html ? '✓' : '□' }}
-                                    </span>
-                                    <span
-                                        :class="[
-                                            'w-8 h-8 flex items-center justify-center rounded text-sm',
-                                            topic.has_txt ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'
-                                        ]"
-                                        title="TXT"
-                                    >
-                                        {{ topic.has_txt ? '✓' : '□' }}
-                                    </span>
-                                    <span
-                                        :class="[
-                                            'w-8 h-8 flex items-center justify-center rounded text-sm',
-                                            topic.has_mp3 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-400'
-                                        ]"
-                                        title="MP3"
-                                    >
-                                        {{ topic.has_mp3 ? '✓' : '□' }}
-                                    </span>
                                 </div>
                             </div>
                         </div>
@@ -664,6 +868,213 @@
                     <div class="bg-gray-50 rounded-lg p-4 text-center">
                         <p class="text-2xl font-bold text-gray-600">{{ topicSummary.not_started }}</p>
                         <p class="text-sm text-gray-700">未着手</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 設定画面 -->
+            <div v-else-if="currentView === 'settings'" class="fade-in">
+                <h2 class="text-2xl font-bold text-gray-800 mb-6">⚙️ 設定</h2>
+
+                <!-- タブ切り替え -->
+                <div class="flex gap-2 mb-6">
+                    <button
+                        @click="settingsTab = 'destinations'"
+                        :class="[
+                            'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                            settingsTab === 'destinations'
+                                ? 'bg-purple-500 text-white'
+                                : 'bg-white text-gray-600 hover:bg-gray-100'
+                        ]"
+                    >
+                        📦 納品先マスター
+                    </button>
+                    <button
+                        @click="settingsTab = 'tts-engines'"
+                        :class="[
+                            'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                            settingsTab === 'tts-engines'
+                                ? 'bg-indigo-500 text-white'
+                                : 'bg-white text-gray-600 hover:bg-gray-100'
+                        ]"
+                    >
+                        🔊 音声変換マスター
+                    </button>
+                </div>
+
+                <!-- 納品先マスター -->
+                <div v-if="settingsTab === 'destinations'" class="bg-white rounded-lg shadow">
+                    <div class="p-6 border-b">
+                        <h3 class="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                            📦 納品先マスター
+                            <span class="text-sm font-normal text-gray-500">({{ destinations.length }}件)</span>
+                        </h3>
+                        <p class="text-sm text-gray-500 mt-1">プロジェクトの納品先を管理します</p>
+                    </div>
+
+                    <!-- 一覧 -->
+                    <div class="divide-y">
+                        <div
+                            v-for="(dest, index) in destinations"
+                            :key="dest.id"
+                            class="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
+                        >
+                            <div class="flex items-center gap-4">
+                                <span class="text-gray-400 text-sm w-6">{{ index + 1 }}.</span>
+                                <!-- 編集モード -->
+                                <div v-if="editingItem && editingItem.id === dest.id">
+                                    <input
+                                        v-model="editingItem.name"
+                                        type="text"
+                                        class="px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                        @keyup.enter="saveEditing"
+                                        @keyup.esc="cancelEditing"
+                                    >
+                                </div>
+                                <!-- 表示モード -->
+                                <span v-else class="text-gray-800 font-medium">{{ dest.name }}</span>
+                            </div>
+                            <div class="flex gap-2">
+                                <template v-if="editingItem && editingItem.id === dest.id">
+                                    <button
+                                        @click="saveEditing"
+                                        class="px-3 py-1 bg-green-500 text-white text-sm rounded hover:bg-green-600"
+                                    >
+                                        保存
+                                    </button>
+                                    <button
+                                        @click="cancelEditing"
+                                        class="px-3 py-1 bg-gray-300 text-gray-700 text-sm rounded hover:bg-gray-400"
+                                    >
+                                        キャンセル
+                                    </button>
+                                </template>
+                                <template v-else>
+                                    <button
+                                        @click="startEditing(dest)"
+                                        class="px-3 py-1 bg-gray-100 text-gray-600 text-sm rounded hover:bg-gray-200"
+                                        title="編集"
+                                    >
+                                        ✏️
+                                    </button>
+                                    <button
+                                        @click="deleteDestination(dest.id)"
+                                        class="px-3 py-1 bg-red-100 text-red-600 text-sm rounded hover:bg-red-200"
+                                        title="削除"
+                                    >
+                                        🗑️
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 新規追加 -->
+                    <div class="p-6 border-t bg-gray-50">
+                        <div class="flex gap-2">
+                            <input
+                                v-model="newItemName"
+                                type="text"
+                                placeholder="新しい納品先の名前"
+                                class="flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                @keyup.enter="addDestination"
+                            >
+                            <button
+                                @click="addDestination"
+                                :disabled="!newItemName.trim()"
+                                class="px-4 py-2 bg-purple-500 text-white rounded-lg text-sm hover:bg-purple-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                            >
+                                ＋ 追加
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 音声変換マスター -->
+                <div v-else-if="settingsTab === 'tts-engines'" class="bg-white rounded-lg shadow">
+                    <div class="p-6 border-b">
+                        <h3 class="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                            🔊 音声変換マスター
+                            <span class="text-sm font-normal text-gray-500">({{ ttsEngines.length }}件)</span>
+                        </h3>
+                        <p class="text-sm text-gray-500 mt-1">音声生成に使用するTTSエンジンを管理します</p>
+                    </div>
+
+                    <!-- 一覧 -->
+                    <div class="divide-y">
+                        <div
+                            v-for="(tts, index) in ttsEngines"
+                            :key="tts.id"
+                            class="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
+                        >
+                            <div class="flex items-center gap-4">
+                                <span class="text-gray-400 text-sm w-6">{{ index + 1 }}.</span>
+                                <!-- 編集モード -->
+                                <div v-if="editingItem && editingItem.id === tts.id">
+                                    <input
+                                        v-model="editingItem.name"
+                                        type="text"
+                                        class="px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        @keyup.enter="saveEditing"
+                                        @keyup.esc="cancelEditing"
+                                    >
+                                </div>
+                                <!-- 表示モード -->
+                                <span v-else class="text-gray-800 font-medium">{{ tts.name }}</span>
+                            </div>
+                            <div class="flex gap-2">
+                                <template v-if="editingItem && editingItem.id === tts.id">
+                                    <button
+                                        @click="saveEditing"
+                                        class="px-3 py-1 bg-green-500 text-white text-sm rounded hover:bg-green-600"
+                                    >
+                                        保存
+                                    </button>
+                                    <button
+                                        @click="cancelEditing"
+                                        class="px-3 py-1 bg-gray-300 text-gray-700 text-sm rounded hover:bg-gray-400"
+                                    >
+                                        キャンセル
+                                    </button>
+                                </template>
+                                <template v-else>
+                                    <button
+                                        @click="startEditing(tts)"
+                                        class="px-3 py-1 bg-gray-100 text-gray-600 text-sm rounded hover:bg-gray-200"
+                                        title="編集"
+                                    >
+                                        ✏️
+                                    </button>
+                                    <button
+                                        @click="deleteTtsEngine(tts.id)"
+                                        class="px-3 py-1 bg-red-100 text-red-600 text-sm rounded hover:bg-red-200"
+                                        title="削除"
+                                    >
+                                        🗑️
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 新規追加 -->
+                    <div class="p-6 border-t bg-gray-50">
+                        <div class="flex gap-2">
+                            <input
+                                v-model="newItemName"
+                                type="text"
+                                placeholder="新しい音声変換エンジンの名前"
+                                class="flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                @keyup.enter="addTtsEngine"
+                            >
+                            <button
+                                @click="addTtsEngine"
+                                :disabled="!newItemName.trim()"
+                                class="px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm hover:bg-indigo-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                            >
+                                ＋ 追加
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

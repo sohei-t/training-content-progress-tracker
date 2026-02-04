@@ -21,6 +21,7 @@ class ParsedTopic:
     chapter: str
     title: str
     base_name: str
+    subfolder: str = ""  # サブフォルダパス（例: "入門", "初級/基礎" など）
 
 
 class WBSParserProtocol(Protocol):

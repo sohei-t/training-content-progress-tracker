@@ -213,6 +213,27 @@ body {
     color: #374151;
 }
 
+/* ========== フォルダ展開/折りたたみ ========== */
+.rotate-90 {
+    transform: rotate(90deg);
+}
+
+.folder-header {
+    cursor: pointer;
+    user-select: none;
+}
+
+.folder-content-enter-active,
+.folder-content-leave-active {
+    transition: all 0.3s ease;
+}
+
+.folder-content-enter-from,
+.folder-content-leave-to {
+    opacity: 0;
+    transform: translateY(-10px);
+}
+
 /* ========== 仮想スクロール ========== */
 .virtual-scroll-container {
     overflow-y: auto;
