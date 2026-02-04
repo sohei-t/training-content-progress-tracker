@@ -106,10 +106,15 @@ class AsyncScanner:
         try:
             start_time = datetime.now()
 
-            # プロジェクトフォルダを検出
+            # プロジェクトフォルダを検出（WBS.json または content/ フォルダがあるもの）
+            # 除外: old, 隠しフォルダ
+            excluded_folders = {'old', '.git', '__pycache__', 'node_modules'}
             project_dirs = [
                 d for d in self.base_path.iterdir()
-                if d.is_dir() and (d / 'WBS.json').exists()
+                if d.is_dir()
+                and d.name not in excluded_folders
+                and not d.name.startswith('.')
+                and ((d / 'WBS.json').exists() or (d / 'content').is_dir())
             ]
 
             logger.info(f"Found {len(project_dirs)} projects to scan")
@@ -151,21 +156,21 @@ class AsyncScanner:
         )
 
         try:
-            # WBS.jsonをパース
+            # WBS.jsonをパース（存在する場合）
             wbs_path = project_path / 'WBS.json'
             content_path = project_path / 'content'
 
-            if not wbs_path.exists():
-                logger.warning(f"No WBS.json found: {project_path}")
-                return result
+            topics = []
+            wbs_format = None
 
-            topics = parse_wbs(wbs_path, content_path)
+            if wbs_path.exists():
+                topics = parse_wbs(wbs_path, content_path)
 
-            # WBS形式検出
-            with open(wbs_path, 'r', encoding='utf-8') as f:
-                import json
-                wbs_data = json.load(f)
-                wbs_format = detect_wbs_format(wbs_data)
+                # WBS形式検出
+                with open(wbs_path, 'r', encoding='utf-8') as f:
+                    import json
+                    wbs_data = json.load(f)
+                    wbs_format = detect_wbs_format(wbs_data)
 
             # プロジェクトをDB登録
             project_id = await self.db.upsert_project(
@@ -174,7 +179,7 @@ class AsyncScanner:
                 wbs_format=wbs_format
             )
 
-            # トピックがない場合はファイルシステムから検出
+            # WBS.jsonがない場合、またはトピックがない場合はファイルシステムから検出
             if not topics and content_path.exists():
                 topics = await self._detect_topics_from_files(content_path)
 
@@ -227,30 +232,64 @@ class AsyncScanner:
             result.duration_ms = (datetime.now() - start_time).total_seconds() * 1000
             return result
 
-    async def _detect_topics_from_files(self, content_path: Path) -> List[ParsedTopic]:
-        """ファイルシステムからトピックを検出"""
+    async def _detect_topics_from_files(self, content_path: Path, subfolder: str = "") -> List[ParsedTopic]:
+        """ファイルシステムからトピックを再帰的に検出（数値-数値パターンを含むファイルのみ）"""
+        import re
         topics = []
-        seen_bases = set()
+        seen_bases = set()  # (subfolder, base_name) のペアで重複チェック
 
-        for file in content_path.iterdir():
-            if file.suffix in ['.html', '.txt', '.mp3']:
-                base_name = file.stem
-                if base_name not in seen_bases:
-                    seen_bases.add(base_name)
+        # 数値-数値または数値_数値パターン（例: 1-1, 01-02, 2-3, 1_1, 10_2）
+        topic_pattern = re.compile(r'\d+[-_]\d+')
 
-                    # トピックID抽出
-                    import re
-                    match = re.match(r'^(\d{2}-\d{2})', base_name)
-                    topic_id = match.group(1) if match else base_name[:5]
+        current_path = content_path / subfolder if subfolder else content_path
+
+        if not current_path.exists():
+            return topics
+
+        for item in current_path.iterdir():
+            # サブフォルダの場合は再帰的にスキャン
+            if item.is_dir():
+                # 隠しフォルダと特殊フォルダをスキップ
+                if item.name.startswith('.') or item.name in ['__pycache__', 'node_modules', 'old']:
+                    continue
+
+                # サブフォルダパスを構築
+                new_subfolder = f"{subfolder}/{item.name}" if subfolder else item.name
+                sub_topics = await self._detect_topics_from_files(content_path, new_subfolder)
+                topics.extend(sub_topics)
+                continue
+
+            # ファイルの場合
+            if item.suffix in ['.html', '.txt', '.mp3']:
+                base_name = item.stem
+
+                # _ssml で終わるファイルはスキップ（SSMLは別途チェック）
+                if base_name.endswith('_ssml'):
+                    continue
+
+                # 数値-数値パターンを含むファイル名のみを対象とする
+                # 例: 01-01_xxx, advanced_1-1, basic_2-3 など
+                if not topic_pattern.search(base_name):
+                    continue
+
+                # 重複チェック（サブフォルダ + ファイル名）
+                key = (subfolder, base_name)
+                if key not in seen_bases:
+                    seen_bases.add(key)
+
+                    # トピックID抽出（数値-数値部分）
+                    match = topic_pattern.search(base_name)
+                    topic_id = match.group(0) if match else base_name[:5]
 
                     topics.append(ParsedTopic(
                         topic_id=topic_id,
-                        chapter="",
+                        chapter=subfolder if subfolder else "",  # サブフォルダ名をchapterとして使用
                         title=base_name,
-                        base_name=base_name
+                        base_name=base_name,
+                        subfolder=subfolder
                     ))
 
-        return sorted(topics, key=lambda t: t.base_name)
+        return sorted(topics, key=lambda t: (t.subfolder, t.base_name))
 
     async def _scan_topic_files(
         self,
@@ -258,34 +297,42 @@ class AsyncScanner:
         topic: ParsedTopic,
         content_path: Path
     ) -> Dict:
-        """トピックのファイル状態をスキャン"""
+        """トピックのファイル状態をスキャン（数値-数値パターンを含むファイル、サブフォルダ対応）"""
+        import re
+
+        # 数値-数値または数値_数値パターン（例: 1-1, 01-02, 2-3, 1_1, 10_2）
+        topic_pattern = re.compile(r'\d+[-_]\d+')
+
         result = {
             'base_name': topic.base_name,
             'topic_id': topic.topic_id,
             'chapter': topic.chapter,
             'title': topic.title,
+            'subfolder': topic.subfolder,
             'has_html': False,
             'has_txt': False,
             'has_mp3': False,
+            'has_ssml': False,
             'html_hash': None,
             'txt_hash': None,
             'mp3_hash': None,
+            'ssml_hash': None,
             'files_scanned': 0,
             'changes': 0
         }
 
-        # ファイル存在チェックとハッシュ計算
+        # 数値-数値パターンを含むファイル名のみを対象とする
+        if not topic_pattern.search(topic.base_name):
+            return result
+
+        # サブフォルダを考慮したパスを計算
+        actual_content_path = content_path / topic.subfolder if topic.subfolder else content_path
+
+        # ファイル存在チェックとハッシュ計算（HTML, TXT, MP3）
         for ext in ['html', 'txt', 'mp3']:
-            file_path = content_path / f"{topic.base_name}.{ext}"
+            file_path = actual_content_path / f"{topic.base_name}.{ext}"
 
-            # プレフィックスマッチも試みる
-            if not file_path.exists():
-                prefix = topic.base_name.split('_')[0]  # "01-01"
-                matches = list(content_path.glob(f"{prefix}*.{ext}"))
-                if matches:
-                    file_path = matches[0]
-
-            if file_path.exists():
+            if file_path.exists() and topic_pattern.search(file_path.stem):
                 result[f'has_{ext}'] = True
                 result['files_scanned'] += 1
 
@@ -299,6 +346,20 @@ class AsyncScanner:
                     result['changes'] += 1
                     self.hash_cache.set(cache_key, file_hash)
 
+        # SSMLファイルのチェック（{base_name}_ssml.txt）
+        ssml_path = actual_content_path / f"{topic.base_name}_ssml.txt"
+        if ssml_path.exists():
+            result['has_ssml'] = True
+            result['files_scanned'] += 1
+
+            ssml_hash = await self._compute_hash(ssml_path)
+            result['ssml_hash'] = ssml_hash
+
+            cache_key = str(ssml_path)
+            if self.hash_cache.is_changed(cache_key, ssml_hash):
+                result['changes'] += 1
+                self.hash_cache.set(cache_key, ssml_hash)
+
         # DBに保存
         await self.db.upsert_topic(
             project_id=project_id,
@@ -306,12 +367,15 @@ class AsyncScanner:
             topic_id=topic.topic_id,
             chapter=topic.chapter,
             title=topic.title,
+            subfolder=topic.subfolder,
             has_html=result['has_html'],
             has_txt=result['has_txt'],
             has_mp3=result['has_mp3'],
+            has_ssml=result['has_ssml'],
             html_hash=result['html_hash'],
             txt_hash=result['txt_hash'],
-            mp3_hash=result['mp3_hash']
+            mp3_hash=result['mp3_hash'],
+            ssml_hash=result['ssml_hash']
         )
 
         return result
