@@ -786,6 +786,15 @@
                                             >
                                                 {{ topic.has_mp3 ? '✓' : '□' }}
                                             </span>
+                                            <span
+                                                :class="[
+                                                    'w-8 h-8 flex items-center justify-center rounded text-sm',
+                                                    topic.has_ssml ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-400'
+                                                ]"
+                                                title="SSML"
+                                            >
+                                                {{ topic.has_ssml ? '✓' : '□' }}
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
@@ -847,6 +856,15 @@
                                             title="MP3"
                                         >
                                             {{ topic.has_mp3 ? '✓' : '□' }}
+                                        </span>
+                                        <span
+                                            :class="[
+                                                'w-8 h-8 flex items-center justify-center rounded text-sm',
+                                                topic.has_ssml ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-400'
+                                            ]"
+                                            title="SSML"
+                                        >
+                                            {{ topic.has_ssml ? '✓' : '□' }}
                                         </span>
                                     </div>
                                 </div>

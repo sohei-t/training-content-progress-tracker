@@ -238,8 +238,8 @@ class AsyncScanner:
         topics = []
         seen_bases = set()  # (subfolder, base_name) のペアで重複チェック
 
-        # 数値-数値パターン（例: 1-1, 01-02, 2-3）
-        topic_pattern = re.compile(r'\d+-\d+')
+        # 数値-数値または数値_数値パターン（例: 1-1, 01-02, 2-3, 1_1, 10_2）
+        topic_pattern = re.compile(r'\d+[-_]\d+')
 
         current_path = content_path / subfolder if subfolder else content_path
 
@@ -263,8 +263,12 @@ class AsyncScanner:
             if item.suffix in ['.html', '.txt', '.mp3']:
                 base_name = item.stem
 
-                # 数値-数値パターンを含むファイル名のみを対象とする
-                # 例: 01-01_xxx, advanced_1-1, basic_2-3 など
+                # _ssml で終わるファイルはスキップ（SSMLは別途チェック）
+                if base_name.endswith('_ssml'):
+                    continue
+
+                # 数値-数値または数値_数値パターンを含むファイル名のみを対象とする
+                # 例: 01-01_xxx, advanced_1-1, basic_2-3, 1_1_xxx など
                 if not topic_pattern.search(base_name):
                     continue
 
@@ -296,8 +300,8 @@ class AsyncScanner:
         """トピックのファイル状態をスキャン（数値-数値パターンを含むファイル、サブフォルダ対応）"""
         import re
 
-        # 数値-数値パターン（例: 1-1, 01-02, 2-3）
-        topic_pattern = re.compile(r'\d+-\d+')
+        # 数値-数値または数値_数値パターン（例: 1-1, 01-02, 2-3, 1_1, 10_2）
+        topic_pattern = re.compile(r'\d+[-_]\d+')
 
         result = {
             'base_name': topic.base_name,
@@ -308,9 +312,11 @@ class AsyncScanner:
             'has_html': False,
             'has_txt': False,
             'has_mp3': False,
+            'has_ssml': False,
             'html_hash': None,
             'txt_hash': None,
             'mp3_hash': None,
+            'ssml_hash': None,
             'files_scanned': 0,
             'changes': 0
         }
@@ -340,6 +346,20 @@ class AsyncScanner:
                     result['changes'] += 1
                     self.hash_cache.set(cache_key, file_hash)
 
+        # SSMLファイルのチェック（{base_name}_ssml.txt）
+        ssml_path = actual_content_path / f"{topic.base_name}_ssml.txt"
+        if ssml_path.exists():
+            result['has_ssml'] = True
+            result['files_scanned'] += 1
+
+            ssml_hash = await self._compute_hash(ssml_path)
+            result['ssml_hash'] = ssml_hash
+
+            cache_key = str(ssml_path)
+            if self.hash_cache.is_changed(cache_key, ssml_hash):
+                result['changes'] += 1
+                self.hash_cache.set(cache_key, ssml_hash)
+
         # DBに保存
         await self.db.upsert_topic(
             project_id=project_id,
@@ -351,9 +371,11 @@ class AsyncScanner:
             has_html=result['has_html'],
             has_txt=result['has_txt'],
             has_mp3=result['has_mp3'],
+            has_ssml=result['has_ssml'],
             html_hash=result['html_hash'],
             txt_hash=result['txt_hash'],
-            mp3_hash=result['mp3_hash']
+            mp3_hash=result['mp3_hash'],
+            ssml_hash=result['ssml_hash']
         )
 
         return result
