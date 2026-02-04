@@ -106,10 +106,15 @@ class AsyncScanner:
         try:
             start_time = datetime.now()
 
-            # プロジェクトフォルダを検出
+            # プロジェクトフォルダを検出（WBS.json または content/ フォルダがあるもの）
+            # 除外: old, 隠しフォルダ
+            excluded_folders = {'old', '.git', '__pycache__', 'node_modules'}
             project_dirs = [
                 d for d in self.base_path.iterdir()
-                if d.is_dir() and (d / 'WBS.json').exists()
+                if d.is_dir()
+                and d.name not in excluded_folders
+                and not d.name.startswith('.')
+                and ((d / 'WBS.json').exists() or (d / 'content').is_dir())
             ]
 
             logger.info(f"Found {len(project_dirs)} projects to scan")
@@ -151,21 +156,21 @@ class AsyncScanner:
         )
 
         try:
-            # WBS.jsonをパース
+            # WBS.jsonをパース（存在する場合）
             wbs_path = project_path / 'WBS.json'
             content_path = project_path / 'content'
 
-            if not wbs_path.exists():
-                logger.warning(f"No WBS.json found: {project_path}")
-                return result
+            topics = []
+            wbs_format = None
 
-            topics = parse_wbs(wbs_path, content_path)
+            if wbs_path.exists():
+                topics = parse_wbs(wbs_path, content_path)
 
-            # WBS形式検出
-            with open(wbs_path, 'r', encoding='utf-8') as f:
-                import json
-                wbs_data = json.load(f)
-                wbs_format = detect_wbs_format(wbs_data)
+                # WBS形式検出
+                with open(wbs_path, 'r', encoding='utf-8') as f:
+                    import json
+                    wbs_data = json.load(f)
+                    wbs_format = detect_wbs_format(wbs_data)
 
             # プロジェクトをDB登録
             project_id = await self.db.upsert_project(
@@ -174,7 +179,7 @@ class AsyncScanner:
                 wbs_format=wbs_format
             )
 
-            # トピックがない場合はファイルシステムから検出
+            # WBS.jsonがない場合、またはトピックがない場合はファイルシステムから検出
             if not topics and content_path.exists():
                 topics = await self._detect_topics_from_files(content_path)
 
@@ -228,10 +233,13 @@ class AsyncScanner:
             return result
 
     async def _detect_topics_from_files(self, content_path: Path, subfolder: str = "") -> List[ParsedTopic]:
-        """ファイルシステムからトピックを再帰的に検出（数値で始まるファイルのみ）"""
+        """ファイルシステムからトピックを再帰的に検出（数値-数値パターンを含むファイルのみ）"""
         import re
         topics = []
         seen_bases = set()  # (subfolder, base_name) のペアで重複チェック
+
+        # 数値-数値パターン（例: 1-1, 01-02, 2-3）
+        topic_pattern = re.compile(r'\d+-\d+')
 
         current_path = content_path / subfolder if subfolder else content_path
 
@@ -242,7 +250,7 @@ class AsyncScanner:
             # サブフォルダの場合は再帰的にスキャン
             if item.is_dir():
                 # 隠しフォルダと特殊フォルダをスキップ
-                if item.name.startswith('.') or item.name in ['__pycache__', 'node_modules']:
+                if item.name.startswith('.') or item.name in ['__pycache__', 'node_modules', 'old']:
                     continue
 
                 # サブフォルダパスを構築
@@ -255,9 +263,9 @@ class AsyncScanner:
             if item.suffix in ['.html', '.txt', '.mp3']:
                 base_name = item.stem
 
-                # 数値で始まるファイル名のみを対象とする
-                # 例: 01-01_xxx, 1_xxx, 01_xxx など
-                if not re.match(r'^\d', base_name):
+                # 数値-数値パターンを含むファイル名のみを対象とする
+                # 例: 01-01_xxx, advanced_1-1, basic_2-3 など
+                if not topic_pattern.search(base_name):
                     continue
 
                 # 重複チェック（サブフォルダ + ファイル名）
@@ -265,9 +273,9 @@ class AsyncScanner:
                 if key not in seen_bases:
                     seen_bases.add(key)
 
-                    # トピックID抽出
-                    match = re.match(r'^(\d{2}-\d{2})', base_name)
-                    topic_id = match.group(1) if match else base_name[:5]
+                    # トピックID抽出（数値-数値部分）
+                    match = topic_pattern.search(base_name)
+                    topic_id = match.group(0) if match else base_name[:5]
 
                     topics.append(ParsedTopic(
                         topic_id=topic_id,
@@ -285,8 +293,11 @@ class AsyncScanner:
         topic: ParsedTopic,
         content_path: Path
     ) -> Dict:
-        """トピックのファイル状態をスキャン（数値で始まるファイルのみ、サブフォルダ対応）"""
+        """トピックのファイル状態をスキャン（数値-数値パターンを含むファイル、サブフォルダ対応）"""
         import re
+
+        # 数値-数値パターン（例: 1-1, 01-02, 2-3）
+        topic_pattern = re.compile(r'\d+-\d+')
 
         result = {
             'base_name': topic.base_name,
@@ -304,8 +315,8 @@ class AsyncScanner:
             'changes': 0
         }
 
-        # 数値で始まるファイル名のみを対象とする
-        if not re.match(r'^\d', topic.base_name):
+        # 数値-数値パターンを含むファイル名のみを対象とする
+        if not topic_pattern.search(topic.base_name):
             return result
 
         # サブフォルダを考慮したパスを計算
@@ -315,19 +326,7 @@ class AsyncScanner:
         for ext in ['html', 'txt', 'mp3']:
             file_path = actual_content_path / f"{topic.base_name}.{ext}"
 
-            # プレフィックスマッチも試みる（数値で始まるファイルのみ）
-            if not file_path.exists():
-                prefix = topic.base_name.split('_')[0]  # "01-01"
-                # 数値プレフィックスの場合のみマッチを試みる
-                if re.match(r'^\d', prefix):
-                    matches = [
-                        m for m in actual_content_path.glob(f"{prefix}*.{ext}")
-                        if re.match(r'^\d', m.stem)  # 数値で始まるファイルのみ
-                    ]
-                    if matches:
-                        file_path = matches[0]
-
-            if file_path.exists() and re.match(r'^\d', file_path.stem):
+            if file_path.exists() and topic_pattern.search(file_path.stem):
                 result[f'has_{ext}'] = True
                 result['files_scanned'] += 1
 
