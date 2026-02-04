@@ -79,6 +79,59 @@ const API = {
     },
 
     /**
+     * PUTリクエスト
+     */
+    async put(endpoint, body = {}, options = {}) {
+        const url = `${this.baseUrl}${endpoint}`;
+
+        try {
+            const response = await fetch(url, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                },
+                body: JSON.stringify(body)
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error(`API PUT error: ${url}`, error);
+            throw error;
+        }
+    },
+
+    /**
+     * DELETEリクエスト
+     */
+    async delete(endpoint, options = {}) {
+        const url = `${this.baseUrl}${endpoint}`;
+
+        try {
+            const response = await fetch(url, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            return await response.json();
+        } catch (error) {
+            console.error(`API DELETE error: ${url}`, error);
+            throw error;
+        }
+    },
+
+    /**
      * キャッシュをクリア
      */
     clearCache(endpoint = null) {
@@ -134,6 +187,82 @@ const API = {
      */
     async getStats() {
         return await this.get('/stats');
+    },
+
+    // ========== プロジェクト設定API ==========
+
+    /**
+     * プロジェクト設定更新
+     */
+    async updateProjectSettings(projectId, settings) {
+        this.clearCache('/projects');
+        return await this.put(`/projects/${projectId}/settings`, settings);
+    },
+
+    // ========== 納品先マスターAPI ==========
+
+    /**
+     * 納品先一覧取得
+     */
+    async getDestinations() {
+        return await this.get('/destinations');
+    },
+
+    /**
+     * 納品先作成
+     */
+    async createDestination(data) {
+        this.clearCache('/destinations');
+        return await this.post('/destinations', data);
+    },
+
+    /**
+     * 納品先更新
+     */
+    async updateDestination(id, data) {
+        this.clearCache('/destinations');
+        return await this.put(`/destinations/${id}`, data);
+    },
+
+    /**
+     * 納品先削除
+     */
+    async deleteDestination(id) {
+        this.clearCache('/destinations');
+        return await this.delete(`/destinations/${id}`);
+    },
+
+    // ========== 音声変換エンジンマスターAPI ==========
+
+    /**
+     * 音声変換エンジン一覧取得
+     */
+    async getTtsEngines() {
+        return await this.get('/tts-engines');
+    },
+
+    /**
+     * 音声変換エンジン作成
+     */
+    async createTtsEngine(data) {
+        this.clearCache('/tts-engines');
+        return await this.post('/tts-engines', data);
+    },
+
+    /**
+     * 音声変換エンジン更新
+     */
+    async updateTtsEngine(id, data) {
+        this.clearCache('/tts-engines');
+        return await this.put(`/tts-engines/${id}`, data);
+    },
+
+    /**
+     * 音声変換エンジン削除
+     */
+    async deleteTtsEngine(id) {
+        this.clearCache('/tts-engines');
+        return await this.delete(`/tts-engines/${id}`);
     },
 
     // ========== ヘルスチェック ==========

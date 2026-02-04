@@ -37,6 +37,19 @@ const app = createApp({
         const customRangeMin = ref(0);          // カスタム範囲の最小値
         const customRangeMax = ref(100);        // カスタム範囲の最大値
 
+        // 納品先・音声変換フィルター
+        const destinationFilter = ref('all');   // 'all' または destination_id
+        const ttsEngineFilter = ref('all');     // 'all' または tts_engine_id
+
+        // マスターデータ
+        const destinations = ref([]);
+        const ttsEngines = ref([]);
+
+        // 設定画面の状態
+        const settingsTab = ref('destinations'); // 'destinations' または 'tts-engines'
+        const editingItem = ref(null);           // 編集中のアイテム
+        const newItemName = ref('');             // 新規追加時の名前
+
         // フィルターラベル
         const filterLabels = {
             all: '全て',
@@ -95,23 +108,39 @@ const app = createApp({
 
         // フィルター適用後のプロジェクト
         const filteredProjects = computed(() => {
-            const list = projects.value || [];
+            let list = projects.value || [];
+
+            // 進捗フィルター
             switch (projectFilter.value) {
                 case 'completed':
-                    return list.filter(p => (p.progress || 0) >= 100);
+                    list = list.filter(p => (p.progress || 0) >= 100);
+                    break;
                 case 'incomplete':
-                    return list.filter(p => (p.progress || 0) < 100);
+                    list = list.filter(p => (p.progress || 0) < 100);
+                    break;
                 case 'custom':
                     const min = Number(customRangeMin.value) || 0;
                     const max = Number(customRangeMax.value) || 100;
-                    return list.filter(p => {
+                    list = list.filter(p => {
                         const progress = p.progress || 0;
                         return progress >= min && progress <= max;
                     });
-                case 'all':
-                default:
-                    return list;
+                    break;
             }
+
+            // 納品先フィルター
+            if (destinationFilter.value !== 'all') {
+                const destId = Number(destinationFilter.value);
+                list = list.filter(p => p.destination_id === destId);
+            }
+
+            // 音声変換フィルター
+            if (ttsEngineFilter.value !== 'all') {
+                const ttsId = Number(ttsEngineFilter.value);
+                list = list.filter(p => p.tts_engine_id === ttsId);
+            }
+
+            return list;
         });
 
         // フィルター + ソート適用後のプロジェクト
@@ -149,6 +178,54 @@ const app = createApp({
             return topics.value.filter(t => t.status === topicFilter.value);
         });
 
+        // サブフォルダでグループ化されたトピック一覧
+        const groupedTopics = computed(() => {
+            const grouped = {};
+            const topicList = filteredTopics.value || [];
+
+            for (const topic of topicList) {
+                const folder = topic.subfolder || '';
+                if (!grouped[folder]) {
+                    grouped[folder] = {
+                        name: folder || 'ルート',
+                        topics: [],
+                        completed: 0,
+                        in_progress: 0,
+                        not_started: 0
+                    };
+                }
+                grouped[folder].topics.push(topic);
+
+                // ステータスカウント
+                if (topic.status === 'completed') {
+                    grouped[folder].completed++;
+                } else if (topic.status === 'in_progress') {
+                    grouped[folder].in_progress++;
+                } else {
+                    grouped[folder].not_started++;
+                }
+            }
+
+            // サブフォルダ名でソートして配列に変換
+            return Object.entries(grouped)
+                .sort(([a], [b]) => {
+                    // ルートは常に最初
+                    if (a === '') return -1;
+                    if (b === '') return 1;
+                    return a.localeCompare(b, 'ja');
+                })
+                .map(([key, value]) => ({
+                    key,
+                    ...value,
+                    progress: value.topics.length > 0
+                        ? Math.round((value.completed / value.topics.length) * 100)
+                        : 0
+                }));
+        });
+
+        // サブフォルダの展開状態
+        const expandedFolders = ref({});
+
         // ========== メソッド ==========
 
         // プロジェクト一覧を取得
@@ -161,6 +238,164 @@ const app = createApp({
             } catch (error) {
                 console.error('Failed to fetch projects:', error);
                 showToast('プロジェクトの取得に失敗しました', 'error');
+            }
+        }
+
+        // マスターデータを取得
+        async function fetchMasterData() {
+            try {
+                const [destData, ttsData] = await Promise.all([
+                    API.getDestinations(),
+                    API.getTtsEngines()
+                ]);
+                destinations.value = destData.destinations || [];
+                ttsEngines.value = ttsData.tts_engines || [];
+            } catch (error) {
+                console.error('Failed to fetch master data:', error);
+            }
+        }
+
+        // プロジェクト設定を更新
+        async function updateProjectSettings(projectId, settings) {
+            try {
+                const result = await API.updateProjectSettings(projectId, settings);
+                // ローカル状態を更新
+                const index = projects.value.findIndex(p => p.id === projectId);
+                if (index !== -1 && result.project) {
+                    projects.value[index] = { ...projects.value[index], ...result.project };
+                }
+                showToast('設定を更新しました', 'success');
+            } catch (error) {
+                console.error('Failed to update project settings:', error);
+                showToast('設定の更新に失敗しました', 'error');
+            }
+        }
+
+        // 納品先の変更
+        function onDestinationChange(projectId, destinationId) {
+            const destId = destinationId === '' ? null : Number(destinationId);
+            const project = projects.value.find(p => p.id === projectId);
+            if (project) {
+                updateProjectSettings(projectId, {
+                    destination_id: destId,
+                    tts_engine_id: project.tts_engine_id
+                });
+            }
+        }
+
+        // 音声変換エンジンの変更
+        function onTtsEngineChange(projectId, ttsEngineId) {
+            const ttsId = ttsEngineId === '' ? null : Number(ttsEngineId);
+            const project = projects.value.find(p => p.id === projectId);
+            if (project) {
+                updateProjectSettings(projectId, {
+                    destination_id: project.destination_id,
+                    tts_engine_id: ttsId
+                });
+            }
+        }
+
+        // ========== マスター管理メソッド ==========
+
+        // 納品先の追加
+        async function addDestination() {
+            if (!newItemName.value.trim()) return;
+            try {
+                await API.createDestination({ name: newItemName.value.trim() });
+                newItemName.value = '';
+                await fetchMasterData();
+                showToast('納品先を追加しました', 'success');
+            } catch (error) {
+                console.error('Failed to add destination:', error);
+                showToast('追加に失敗しました', 'error');
+            }
+        }
+
+        // 納品先の更新
+        async function updateDestination(id, name) {
+            try {
+                await API.updateDestination(id, { name });
+                editingItem.value = null;
+                await fetchMasterData();
+                showToast('更新しました', 'success');
+            } catch (error) {
+                console.error('Failed to update destination:', error);
+                showToast('更新に失敗しました', 'error');
+            }
+        }
+
+        // 納品先の削除
+        async function deleteDestination(id) {
+            if (!confirm('この納品先を削除しますか？関連するプロジェクトの納品先は未設定になります。')) return;
+            try {
+                await API.deleteDestination(id);
+                await fetchMasterData();
+                await fetchProjects(); // プロジェクトも再取得
+                showToast('削除しました', 'success');
+            } catch (error) {
+                console.error('Failed to delete destination:', error);
+                showToast('削除に失敗しました', 'error');
+            }
+        }
+
+        // 音声変換エンジンの追加
+        async function addTtsEngine() {
+            if (!newItemName.value.trim()) return;
+            try {
+                await API.createTtsEngine({ name: newItemName.value.trim() });
+                newItemName.value = '';
+                await fetchMasterData();
+                showToast('音声変換エンジンを追加しました', 'success');
+            } catch (error) {
+                console.error('Failed to add TTS engine:', error);
+                showToast('追加に失敗しました', 'error');
+            }
+        }
+
+        // 音声変換エンジンの更新
+        async function updateTtsEngine(id, name) {
+            try {
+                await API.updateTtsEngine(id, { name });
+                editingItem.value = null;
+                await fetchMasterData();
+                showToast('更新しました', 'success');
+            } catch (error) {
+                console.error('Failed to update TTS engine:', error);
+                showToast('更新に失敗しました', 'error');
+            }
+        }
+
+        // 音声変換エンジンの削除
+        async function deleteTtsEngine(id) {
+            if (!confirm('この音声変換エンジンを削除しますか？関連するプロジェクトの設定は未設定になります。')) return;
+            try {
+                await API.deleteTtsEngine(id);
+                await fetchMasterData();
+                await fetchProjects(); // プロジェクトも再取得
+                showToast('削除しました', 'success');
+            } catch (error) {
+                console.error('Failed to delete TTS engine:', error);
+                showToast('削除に失敗しました', 'error');
+            }
+        }
+
+        // 編集開始
+        function startEditing(item) {
+            editingItem.value = { ...item };
+        }
+
+        // 編集キャンセル
+        function cancelEditing() {
+            editingItem.value = null;
+        }
+
+        // 編集保存
+        function saveEditing() {
+            if (!editingItem.value || !editingItem.value.name.trim()) return;
+            if (settingsTab.value === 'destinations') {
+                updateDestination(editingItem.value.id, editingItem.value.name.trim());
+            } else {
+                updateTtsEngine(editingItem.value.id, editingItem.value.name.trim());
             }
         }
 
@@ -210,6 +445,17 @@ const app = createApp({
         function getFilterCount(filter) {
             if (filter === 'all') return topics.value.length;
             return topics.value.filter(t => t.status === filter).length;
+        }
+
+        // サブフォルダの展開/折りたたみ
+        function toggleFolder(folderKey) {
+            expandedFolders.value[folderKey] = !expandedFolders.value[folderKey];
+        }
+
+        // フォルダが展開されているか
+        function isFolderExpanded(folderKey) {
+            // デフォルトは展開状態
+            return expandedFolders.value[folderKey] !== false;
         }
 
         // スキャン実行
@@ -340,7 +586,10 @@ const app = createApp({
 
         onMounted(async () => {
             // 初期データ取得
-            await fetchProjects();
+            await Promise.all([
+                fetchProjects(),
+                fetchMasterData()
+            ]);
             isLoading.value = false;
 
             // WebSocket接続
@@ -376,9 +625,24 @@ const app = createApp({
             customRangeMin,
             customRangeMax,
 
+            // 納品先・音声変換フィルター
+            destinationFilter,
+            ttsEngineFilter,
+
+            // マスターデータ
+            destinations,
+            ttsEngines,
+
+            // 設定画面
+            settingsTab,
+            editingItem,
+            newItemName,
+
             // 算出プロパティ
             sortedProjects,
             filteredTopics,
+            groupedTopics,
+            expandedFolders,
             completedProjects,
             incompleteProjects,
             customFilteredProjects,
@@ -391,7 +655,24 @@ const app = createApp({
             openFolder,
             formatDateTime,
             formatTime,
-            getFilterCount
+            getFilterCount,
+            toggleFolder,
+            isFolderExpanded,
+
+            // プロジェクト設定
+            onDestinationChange,
+            onTtsEngineChange,
+
+            // マスター管理
+            addDestination,
+            updateDestination,
+            deleteDestination,
+            addTtsEngine,
+            updateTtsEngine,
+            deleteTtsEngine,
+            startEditing,
+            cancelEditing,
+            saveEditing
         };
     }
 });
