@@ -88,6 +88,16 @@ class Database:
                 )
             """)
 
+            # publication_statuses マスターテーブル（公開状態）
+            await self._connection.execute("""
+                CREATE TABLE IF NOT EXISTS publication_statuses (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    display_order INTEGER DEFAULT 0,
+                    created_at TEXT DEFAULT (datetime('now'))
+                )
+            """)
+
             # 初期データ挿入（存在しない場合のみ）
             await self._connection.execute("""
                 INSERT OR IGNORE INTO destinations (name, display_order) VALUES ('会社', 1)
@@ -100,6 +110,17 @@ class Database:
             """)
             await self._connection.execute("""
                 INSERT OR IGNORE INTO tts_engines (name, display_order) VALUES ('Gemini 2.5 Flash TTS', 2)
+            """)
+
+            # 公開状態の初期データ
+            await self._connection.execute("""
+                INSERT OR IGNORE INTO publication_statuses (name, display_order) VALUES ('🔒 非公開', 1)
+            """)
+            await self._connection.execute("""
+                INSERT OR IGNORE INTO publication_statuses (name, display_order) VALUES ('🆓 無料公開', 2)
+            """)
+            await self._connection.execute("""
+                INSERT OR IGNORE INTO publication_statuses (name, display_order) VALUES ('💰 有料公開', 3)
             """)
 
             # projects テーブル
@@ -116,7 +137,7 @@ class Database:
                     mp3_count INTEGER DEFAULT 0,
                     destination_id INTEGER REFERENCES destinations(id),
                     tts_engine_id INTEGER REFERENCES tts_engines(id),
-                    publication_status TEXT DEFAULT 'private' CHECK(publication_status IN ('free', 'paid', 'private')),
+                    publication_status_id INTEGER REFERENCES publication_statuses(id),
                     last_scanned_at TEXT,
                     created_at TEXT DEFAULT (datetime('now')),
                     updated_at TEXT DEFAULT (datetime('now'))
@@ -208,12 +229,32 @@ class Database:
             )
             logger.info("Added tts_engine_id column to projects table")
 
-        # publication_status カラムが存在しない場合は追加
-        if 'publication_status' not in columns:
+        # publication_status_id カラムが存在しない場合は追加
+        if 'publication_status_id' not in columns:
             await self._connection.execute(
-                "ALTER TABLE projects ADD COLUMN publication_status TEXT DEFAULT 'private' CHECK(publication_status IN ('free', 'paid', 'private'))"
+                "ALTER TABLE projects ADD COLUMN publication_status_id INTEGER REFERENCES publication_statuses(id)"
             )
-            logger.info("Added publication_status column to projects table")
+            logger.info("Added publication_status_id column to projects table")
+
+            # 旧 publication_status カラムからのマイグレーション
+            if 'publication_status' in columns:
+                # 既存データをマイグレーション
+                await self._connection.execute("""
+                    UPDATE projects SET publication_status_id = (
+                        SELECT id FROM publication_statuses WHERE name LIKE '%非公開%'
+                    ) WHERE publication_status = 'private' OR publication_status IS NULL
+                """)
+                await self._connection.execute("""
+                    UPDATE projects SET publication_status_id = (
+                        SELECT id FROM publication_statuses WHERE name LIKE '%無料公開%'
+                    ) WHERE publication_status = 'free'
+                """)
+                await self._connection.execute("""
+                    UPDATE projects SET publication_status_id = (
+                        SELECT id FROM publication_statuses WHERE name LIKE '%有料公開%'
+                    ) WHERE publication_status = 'paid'
+                """)
+                logger.info("Migrated publication_status to publication_status_id")
 
         # topicsテーブルのマイグレーション（UNIQUE制約の変更を含む）
         await self._migrate_topics_table()
@@ -392,33 +433,94 @@ class Database:
             )
             return True
 
+    # ========== 公開状態マスター操作 ==========
+
+    async def get_all_publication_statuses(self) -> List[Dict[str, Any]]:
+        """全公開状態取得"""
+        cursor = await self._connection.execute(
+            "SELECT * FROM publication_statuses ORDER BY display_order, id"
+        )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    async def get_publication_status(self, publication_status_id: int) -> Optional[Dict[str, Any]]:
+        """公開状態単体取得"""
+        cursor = await self._connection.execute(
+            "SELECT * FROM publication_statuses WHERE id = ?",
+            (publication_status_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def create_publication_status(self, name: str, display_order: int = 0) -> int:
+        """公開状態作成"""
+        async with self._lock:
+            cursor = await self._connection.execute("""
+                INSERT INTO publication_statuses (name, display_order)
+                VALUES (?, ?)
+                RETURNING id
+            """, (name, display_order))
+            row = await cursor.fetchone()
+            return row[0]
+
+    async def update_publication_status(self, publication_status_id: int, name: str, display_order: Optional[int] = None) -> bool:
+        """公開状態更新"""
+        async with self._lock:
+            if display_order is not None:
+                await self._connection.execute("""
+                    UPDATE publication_statuses SET name = ?, display_order = ? WHERE id = ?
+                """, (name, display_order, publication_status_id))
+            else:
+                await self._connection.execute("""
+                    UPDATE publication_statuses SET name = ? WHERE id = ?
+                """, (name, publication_status_id))
+            return True
+
+    async def delete_publication_status(self, publication_status_id: int) -> bool:
+        """公開状態削除"""
+        async with self._lock:
+            # 関連プロジェクトのpublication_status_idをNULLに設定
+            await self._connection.execute(
+                "UPDATE projects SET publication_status_id = NULL WHERE publication_status_id = ?",
+                (publication_status_id,)
+            )
+            await self._connection.execute(
+                "DELETE FROM publication_statuses WHERE id = ?",
+                (publication_status_id,)
+            )
+            return True
+
     # ========== プロジェクト操作 ==========
 
     async def get_all_projects(self) -> List[Dict[str, Any]]:
-        """全プロジェクト取得（納品先・音声変換エンジン名含む）"""
+        """全プロジェクト取得（納品先・音声変換エンジン・公開状態名含む）"""
         cursor = await self._connection.execute("""
             SELECT
                 p.*,
                 d.name as destination_name,
-                t.name as tts_engine_name
+                t.name as tts_engine_name,
+                ps.name as publication_status_name
             FROM projects p
             LEFT JOIN destinations d ON p.destination_id = d.id
             LEFT JOIN tts_engines t ON p.tts_engine_id = t.id
+            LEFT JOIN publication_statuses ps ON p.publication_status_id = ps.id
             ORDER BY p.name
         """)
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
 
     async def get_project(self, project_id: int) -> Optional[Dict[str, Any]]:
-        """プロジェクト単体取得（納品先・音声変換エンジン名含む）"""
+        """プロジェクト単体取得（納品先・音声変換エンジン・公開状態名含む）"""
         cursor = await self._connection.execute("""
             SELECT
                 p.*,
                 d.name as destination_name,
-                t.name as tts_engine_name
+                t.name as tts_engine_name,
+                ps.name as publication_status_name
             FROM projects p
             LEFT JOIN destinations d ON p.destination_id = d.id
             LEFT JOIN tts_engines t ON p.tts_engine_id = t.id
+            LEFT JOIN publication_statuses ps ON p.publication_status_id = ps.id
             WHERE p.id = ?
         """, (project_id,))
         row = await cursor.fetchone()
@@ -476,28 +578,18 @@ class Database:
         project_id: int,
         destination_id: Optional[int] = None,
         tts_engine_id: Optional[int] = None,
-        publication_status: Optional[str] = None
+        publication_status_id: Optional[int] = None
     ) -> bool:
         """プロジェクトの設定（納品先・音声変換エンジン・公開状態）を更新"""
         async with self._lock:
-            # publication_statusがNoneの場合は更新しない
-            if publication_status is not None:
-                await self._connection.execute("""
-                    UPDATE projects SET
-                        destination_id = ?,
-                        tts_engine_id = ?,
-                        publication_status = ?,
-                        updated_at = datetime('now')
-                    WHERE id = ?
-                """, (destination_id, tts_engine_id, publication_status, project_id))
-            else:
-                await self._connection.execute("""
-                    UPDATE projects SET
-                        destination_id = ?,
-                        tts_engine_id = ?,
-                        updated_at = datetime('now')
-                    WHERE id = ?
-                """, (destination_id, tts_engine_id, project_id))
+            await self._connection.execute("""
+                UPDATE projects SET
+                    destination_id = ?,
+                    tts_engine_id = ?,
+                    publication_status_id = ?,
+                    updated_at = datetime('now')
+                WHERE id = ?
+            """, (destination_id, tts_engine_id, publication_status_id, project_id))
             return True
 
     # ========== トピック操作 ==========
