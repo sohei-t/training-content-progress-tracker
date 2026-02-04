@@ -145,8 +145,9 @@ async def get_project_topics(project_id: int):
             topic_data['has_html'] = bool(topic_data.get('has_html'))
             topic_data['has_txt'] = bool(topic_data.get('has_txt'))
             topic_data['has_mp3'] = bool(topic_data.get('has_mp3'))
+            topic_data['has_ssml'] = bool(topic_data.get('has_ssml'))
 
-            # ステータス計算
+            # ステータス計算（SSMLは進捗に影響しない）
             if topic_data['has_html'] and topic_data['has_txt'] and topic_data['has_mp3']:
                 topic_data['status'] = 'completed'
                 completed += 1
