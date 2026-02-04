@@ -265,6 +265,39 @@ const API = {
         return await this.delete(`/tts-engines/${id}`);
     },
 
+    // ========== 公開状態マスターAPI ==========
+
+    /**
+     * 公開状態一覧取得
+     */
+    async getPublicationStatuses() {
+        return await this.get('/publication-statuses');
+    },
+
+    /**
+     * 公開状態作成
+     */
+    async createPublicationStatus(data) {
+        this.clearCache('/publication-statuses');
+        return await this.post('/publication-statuses', data);
+    },
+
+    /**
+     * 公開状態更新
+     */
+    async updatePublicationStatus(id, data) {
+        this.clearCache('/publication-statuses');
+        return await this.put(`/publication-statuses/${id}`, data);
+    },
+
+    /**
+     * 公開状態削除
+     */
+    async deletePublicationStatus(id) {
+        this.clearCache('/publication-statuses');
+        return await this.delete(`/publication-statuses/${id}`);
+    },
+
     // ========== ヘルスチェック ==========
 
     /**

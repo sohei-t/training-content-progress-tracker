@@ -44,9 +44,10 @@ const app = createApp({
         // マスターデータ
         const destinations = ref([]);
         const ttsEngines = ref([]);
+        const publicationStatuses = ref([]);
 
         // 設定画面の状態
-        const settingsTab = ref('destinations'); // 'destinations' または 'tts-engines'
+        const settingsTab = ref('destinations'); // 'destinations', 'tts-engines', 'publication-statuses'
         const editingItem = ref(null);           // 編集中のアイテム
         const newItemName = ref('');             // 新規追加時の名前
 
@@ -244,12 +245,14 @@ const app = createApp({
         // マスターデータを取得
         async function fetchMasterData() {
             try {
-                const [destData, ttsData] = await Promise.all([
+                const [destData, ttsData, pubData] = await Promise.all([
                     API.getDestinations(),
-                    API.getTtsEngines()
+                    API.getTtsEngines(),
+                    API.getPublicationStatuses()
                 ]);
                 destinations.value = destData.destinations || [];
                 ttsEngines.value = ttsData.tts_engines || [];
+                publicationStatuses.value = pubData.publication_statuses || [];
             } catch (error) {
                 console.error('Failed to fetch master data:', error);
             }
@@ -296,35 +299,34 @@ const app = createApp({
         }
 
         // 公開状態の変更
-        function onPublicationStatusChange(projectId, status) {
+        function onPublicationStatusChange(projectId, statusId) {
+            const pubStatusId = statusId === '' ? null : Number(statusId);
             const project = projects.value.find(p => p.id === projectId);
             if (project) {
                 updateProjectSettings(projectId, {
                     destination_id: project.destination_id,
                     tts_engine_id: project.tts_engine_id,
-                    publication_status: status || 'private'
+                    publication_status_id: pubStatusId
                 });
             }
         }
 
-        // 公開状態のラベル取得
-        function getPublicationStatusLabel(status) {
-            const labels = {
-                'free': '🆓 無料公開',
-                'paid': '💰 有料公開',
-                'private': '🔒 非公開'
-            };
-            return labels[status] || labels['private'];
+        // 公開状態のラベル取得（マスターデータから）
+        function getPublicationStatusLabel(statusId) {
+            if (!statusId) return '📋 公開状態';
+            const status = publicationStatuses.value.find(s => s.id === statusId);
+            return status ? status.name : '📋 公開状態';
         }
 
         // 公開状態のバッジクラス取得
-        function getPublicationStatusClass(status) {
-            const classes = {
-                'free': 'bg-green-100 text-green-700',
-                'paid': 'bg-yellow-100 text-yellow-700',
-                'private': 'bg-gray-100 text-gray-700'
-            };
-            return classes[status] || classes['private'];
+        function getPublicationStatusClass(statusId) {
+            if (!statusId) return 'bg-gray-100 text-gray-700';
+            const status = publicationStatuses.value.find(s => s.id === statusId);
+            if (!status) return 'bg-gray-100 text-gray-700';
+            // 名前に基づいてクラスを決定
+            if (status.name.includes('無料')) return 'bg-green-100 text-green-700';
+            if (status.name.includes('有料')) return 'bg-yellow-100 text-yellow-700';
+            return 'bg-gray-100 text-gray-700';
         }
 
         // ========== マスター管理メソッド ==========
@@ -411,6 +413,47 @@ const app = createApp({
             }
         }
 
+        // 公開状態の追加
+        async function addPublicationStatus() {
+            if (!newItemName.value.trim()) return;
+            try {
+                await API.createPublicationStatus({ name: newItemName.value.trim() });
+                newItemName.value = '';
+                await fetchMasterData();
+                showToast('追加しました', 'success');
+            } catch (error) {
+                console.error('Failed to create publication status:', error);
+                showToast('追加に失敗しました', 'error');
+            }
+        }
+
+        // 公開状態の更新
+        async function updatePublicationStatus(id, name) {
+            try {
+                await API.updatePublicationStatus(id, { name });
+                editingItem.value = null;
+                await fetchMasterData();
+                showToast('更新しました', 'success');
+            } catch (error) {
+                console.error('Failed to update publication status:', error);
+                showToast('更新に失敗しました', 'error');
+            }
+        }
+
+        // 公開状態の削除
+        async function deletePublicationStatus(id) {
+            if (!confirm('この公開状態を削除しますか？関連するプロジェクトの設定は未設定になります。')) return;
+            try {
+                await API.deletePublicationStatus(id);
+                await fetchMasterData();
+                await fetchProjects(); // プロジェクトも再取得
+                showToast('削除しました', 'success');
+            } catch (error) {
+                console.error('Failed to delete publication status:', error);
+                showToast('削除に失敗しました', 'error');
+            }
+        }
+
         // 編集開始
         function startEditing(item) {
             editingItem.value = { ...item };
@@ -426,8 +469,10 @@ const app = createApp({
             if (!editingItem.value || !editingItem.value.name.trim()) return;
             if (settingsTab.value === 'destinations') {
                 updateDestination(editingItem.value.id, editingItem.value.name.trim());
-            } else {
+            } else if (settingsTab.value === 'tts-engines') {
                 updateTtsEngine(editingItem.value.id, editingItem.value.name.trim());
+            } else if (settingsTab.value === 'publication-statuses') {
+                updatePublicationStatus(editingItem.value.id, editingItem.value.name.trim());
             }
         }
 
@@ -664,6 +709,7 @@ const app = createApp({
             // マスターデータ
             destinations,
             ttsEngines,
+            publicationStatuses,
 
             // 設定画面
             settingsTab,
@@ -705,6 +751,9 @@ const app = createApp({
             addTtsEngine,
             updateTtsEngine,
             deleteTtsEngine,
+            addPublicationStatus,
+            updatePublicationStatus,
+            deletePublicationStatus,
             startEditing,
             cancelEditing,
             saveEditing

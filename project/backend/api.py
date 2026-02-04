@@ -450,6 +450,76 @@ async def delete_tts_engine(tts_engine_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ========== 公開状態マスターAPI ==========
+
+@router.get("/publication-statuses")
+async def get_publication_statuses():
+    """公開状態一覧取得"""
+    try:
+        db = await get_database()
+        publication_statuses = await db.get_all_publication_statuses()
+        return {"publication_statuses": publication_statuses}
+    except Exception as e:
+        logger.error(f"Error getting publication statuses: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/publication-statuses")
+async def create_publication_status(data: dict):
+    """公開状態作成"""
+    try:
+        name = data.get('name')
+        if not name:
+            raise HTTPException(status_code=400, detail="名前は必須です")
+
+        display_order = data.get('display_order', 0)
+
+        db = await get_database()
+        publication_status_id = await db.create_publication_status(name, display_order)
+        publication_status = await db.get_publication_status(publication_status_id)
+
+        return {"publication_status": publication_status}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating publication status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/publication-statuses/{publication_status_id}")
+async def update_publication_status(publication_status_id: int, data: dict):
+    """公開状態更新"""
+    try:
+        name = data.get('name')
+        if not name:
+            raise HTTPException(status_code=400, detail="名前は必須です")
+
+        display_order = data.get('display_order')
+
+        db = await get_database()
+        await db.update_publication_status(publication_status_id, name, display_order)
+        publication_status = await db.get_publication_status(publication_status_id)
+
+        return {"publication_status": publication_status}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating publication status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/publication-statuses/{publication_status_id}")
+async def delete_publication_status(publication_status_id: int):
+    """公開状態削除"""
+    try:
+        db = await get_database()
+        await db.delete_publication_status(publication_status_id)
+        return {"status": "deleted"}
+    except Exception as e:
+        logger.error(f"Error deleting publication status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ========== プロジェクト設定API ==========
 
 @router.put("/projects/{project_id}/settings")
@@ -465,13 +535,9 @@ async def update_project_settings(project_id: int, data: dict):
 
         destination_id = data.get('destination_id')
         tts_engine_id = data.get('tts_engine_id')
-        publication_status = data.get('publication_status')
+        publication_status_id = data.get('publication_status_id')
 
-        # publication_statusの値を検証
-        if publication_status is not None and publication_status not in ('free', 'paid', 'private'):
-            raise HTTPException(status_code=400, detail="Invalid publication_status. Must be 'free', 'paid', or 'private'")
-
-        await db.update_project_settings(project_id, destination_id, tts_engine_id, publication_status)
+        await db.update_project_settings(project_id, destination_id, tts_engine_id, publication_status_id)
 
         # 更新後のプロジェクトを取得
         updated_project = await db.get_project(project_id)
