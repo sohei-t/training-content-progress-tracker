@@ -295,6 +295,38 @@ const app = createApp({
             }
         }
 
+        // 公開状態の変更
+        function onPublicationStatusChange(projectId, status) {
+            const project = projects.value.find(p => p.id === projectId);
+            if (project) {
+                updateProjectSettings(projectId, {
+                    destination_id: project.destination_id,
+                    tts_engine_id: project.tts_engine_id,
+                    publication_status: status || 'private'
+                });
+            }
+        }
+
+        // 公開状態のラベル取得
+        function getPublicationStatusLabel(status) {
+            const labels = {
+                'free': '🆓 無料公開',
+                'paid': '💰 有料公開',
+                'private': '🔒 非公開'
+            };
+            return labels[status] || labels['private'];
+        }
+
+        // 公開状態のバッジクラス取得
+        function getPublicationStatusClass(status) {
+            const classes = {
+                'free': 'bg-green-100 text-green-700',
+                'paid': 'bg-yellow-100 text-yellow-700',
+                'private': 'bg-gray-100 text-gray-700'
+            };
+            return classes[status] || classes['private'];
+        }
+
         // ========== マスター管理メソッド ==========
 
         // 納品先の追加
@@ -662,6 +694,9 @@ const app = createApp({
             // プロジェクト設定
             onDestinationChange,
             onTtsEngineChange,
+            onPublicationStatusChange,
+            getPublicationStatusLabel,
+            getPublicationStatusClass,
 
             // マスター管理
             addDestination,

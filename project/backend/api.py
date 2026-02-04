@@ -454,7 +454,7 @@ async def delete_tts_engine(tts_engine_id: int):
 
 @router.put("/projects/{project_id}/settings")
 async def update_project_settings(project_id: int, data: dict):
-    """プロジェクト設定更新（納品先・音声変換エンジン）"""
+    """プロジェクト設定更新（納品先・音声変換エンジン・公開状態）"""
     try:
         db = await get_database()
 
@@ -465,8 +465,13 @@ async def update_project_settings(project_id: int, data: dict):
 
         destination_id = data.get('destination_id')
         tts_engine_id = data.get('tts_engine_id')
+        publication_status = data.get('publication_status')
 
-        await db.update_project_settings(project_id, destination_id, tts_engine_id)
+        # publication_statusの値を検証
+        if publication_status is not None and publication_status not in ('free', 'paid', 'private'):
+            raise HTTPException(status_code=400, detail="Invalid publication_status. Must be 'free', 'paid', or 'private'")
+
+        await db.update_project_settings(project_id, destination_id, tts_engine_id, publication_status)
 
         # 更新後のプロジェクトを取得
         updated_project = await db.get_project(project_id)
