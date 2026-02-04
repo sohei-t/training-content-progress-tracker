@@ -469,13 +469,13 @@
                                 </button>
                             </div>
                             <!-- 設定ドロップダウン -->
-                            <div class="flex gap-2 text-xs" @click.stop>
+                            <div class="flex flex-wrap gap-2 text-xs" @click.stop>
                                 <select
                                     :value="project.destination_id || ''"
                                     @change="onDestinationChange(project.id, $event.target.value)"
-                                    class="flex-1 px-2 py-1 border rounded text-xs"
+                                    class="flex-1 px-2 py-1 border rounded text-xs min-w-0"
                                 >
-                                    <option value="">📦 納品先を選択</option>
+                                    <option value="">📦 納品先</option>
                                     <option v-for="dest in destinations" :key="dest.id" :value="dest.id">
                                         {{ dest.name }}
                                     </option>
@@ -483,12 +483,21 @@
                                 <select
                                     :value="project.tts_engine_id || ''"
                                     @change="onTtsEngineChange(project.id, $event.target.value)"
-                                    class="flex-1 px-2 py-1 border rounded text-xs"
+                                    class="flex-1 px-2 py-1 border rounded text-xs min-w-0"
                                 >
-                                    <option value="">🔊 音声変換を選択</option>
+                                    <option value="">🔊 音声</option>
                                     <option v-for="tts in ttsEngines" :key="tts.id" :value="tts.id">
                                         {{ tts.name }}
                                     </option>
+                                </select>
+                                <select
+                                    :value="project.publication_status || 'private'"
+                                    @change="onPublicationStatusChange(project.id, $event.target.value)"
+                                    class="flex-1 px-2 py-1 border rounded text-xs min-w-0"
+                                >
+                                    <option value="private">🔒 非公開</option>
+                                    <option value="free">🆓 無料公開</option>
+                                    <option value="paid">💰 有料公開</option>
                                 </select>
                             </div>
                         </div>
@@ -498,14 +507,15 @@
                 <!-- リスト表示 -->
                 <div v-else class="bg-white rounded-lg shadow overflow-hidden overflow-x-auto">
                     <!-- リストヘッダー -->
-                    <div class="grid grid-cols-16 gap-2 px-4 py-3 bg-gray-50 border-b text-sm font-medium text-gray-500 min-w-[1000px]">
-                        <div class="col-span-3">プロジェクト名</div>
+                    <div class="grid grid-cols-16 gap-2 px-4 py-3 bg-gray-50 border-b text-sm font-medium text-gray-500 min-w-[1100px]">
+                        <div class="col-span-2">プロジェクト名</div>
                         <div class="col-span-2 text-center">進捗</div>
                         <div class="col-span-1 text-center">HTML</div>
                         <div class="col-span-1 text-center">TXT</div>
                         <div class="col-span-1 text-center">MP3</div>
                         <div class="col-span-2 text-center">納品先</div>
-                        <div class="col-span-3 text-center">音声変換</div>
+                        <div class="col-span-2 text-center">音声変換</div>
+                        <div class="col-span-2 text-center">公開状態</div>
                         <div class="col-span-2 text-center">トピック</div>
                         <div class="col-span-1 text-center">状態</div>
                     </div>
@@ -515,9 +525,9 @@
                         v-for="project in sortedFilteredProjects"
                         :key="project.id"
                         @click="selectProject(project)"
-                        class="grid grid-cols-16 gap-2 px-4 py-3 border-b hover:bg-blue-50 cursor-pointer transition-colors list-item-hover min-w-[1000px]"
+                        class="grid grid-cols-16 gap-2 px-4 py-3 border-b hover:bg-blue-50 cursor-pointer transition-colors list-item-hover min-w-[1100px]"
                     >
-                        <div class="col-span-3 flex items-center gap-2">
+                        <div class="col-span-2 flex items-center gap-2">
                             <span class="font-medium text-gray-800 truncate" :title="project.name">
                                 {{ project.name }}
                             </span>
@@ -562,7 +572,7 @@
                                 </option>
                             </select>
                         </div>
-                        <div class="col-span-3 text-center" @click.stop>
+                        <div class="col-span-2 text-center" @click.stop>
                             <select
                                 :value="project.tts_engine_id || ''"
                                 @change="onTtsEngineChange(project.id, $event.target.value)"
@@ -572,6 +582,17 @@
                                 <option v-for="tts in ttsEngines" :key="tts.id" :value="tts.id">
                                     {{ tts.name }}
                                 </option>
+                            </select>
+                        </div>
+                        <div class="col-span-2 text-center" @click.stop>
+                            <select
+                                :value="project.publication_status || 'private'"
+                                @change="onPublicationStatusChange(project.id, $event.target.value)"
+                                class="w-full px-2 py-1 border rounded text-xs"
+                            >
+                                <option value="private">🔒 非公開</option>
+                                <option value="free">🆓 無料</option>
+                                <option value="paid">💰 有料</option>
                             </select>
                         </div>
                         <div class="col-span-2 text-center text-sm text-gray-600">

@@ -116,6 +116,7 @@ class Database:
                     mp3_count INTEGER DEFAULT 0,
                     destination_id INTEGER REFERENCES destinations(id),
                     tts_engine_id INTEGER REFERENCES tts_engines(id),
+                    publication_status TEXT DEFAULT 'private' CHECK(publication_status IN ('free', 'paid', 'private')),
                     last_scanned_at TEXT,
                     created_at TEXT DEFAULT (datetime('now')),
                     updated_at TEXT DEFAULT (datetime('now'))
@@ -206,6 +207,13 @@ class Database:
                 "ALTER TABLE projects ADD COLUMN tts_engine_id INTEGER REFERENCES tts_engines(id)"
             )
             logger.info("Added tts_engine_id column to projects table")
+
+        # publication_status カラムが存在しない場合は追加
+        if 'publication_status' not in columns:
+            await self._connection.execute(
+                "ALTER TABLE projects ADD COLUMN publication_status TEXT DEFAULT 'private' CHECK(publication_status IN ('free', 'paid', 'private'))"
+            )
+            logger.info("Added publication_status column to projects table")
 
         # topicsテーブルのマイグレーション（UNIQUE制約の変更を含む）
         await self._migrate_topics_table()
@@ -467,17 +475,29 @@ class Database:
         self,
         project_id: int,
         destination_id: Optional[int] = None,
-        tts_engine_id: Optional[int] = None
+        tts_engine_id: Optional[int] = None,
+        publication_status: Optional[str] = None
     ) -> bool:
-        """プロジェクトの設定（納品先・音声変換エンジン）を更新"""
+        """プロジェクトの設定（納品先・音声変換エンジン・公開状態）を更新"""
         async with self._lock:
-            await self._connection.execute("""
-                UPDATE projects SET
-                    destination_id = ?,
-                    tts_engine_id = ?,
-                    updated_at = datetime('now')
-                WHERE id = ?
-            """, (destination_id, tts_engine_id, project_id))
+            # publication_statusがNoneの場合は更新しない
+            if publication_status is not None:
+                await self._connection.execute("""
+                    UPDATE projects SET
+                        destination_id = ?,
+                        tts_engine_id = ?,
+                        publication_status = ?,
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                """, (destination_id, tts_engine_id, publication_status, project_id))
+            else:
+                await self._connection.execute("""
+                    UPDATE projects SET
+                        destination_id = ?,
+                        tts_engine_id = ?,
+                        updated_at = datetime('now')
+                    WHERE id = ?
+                """, (destination_id, tts_engine_id, project_id))
             return True
 
     # ========== トピック操作 ==========
