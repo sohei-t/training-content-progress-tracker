@@ -1,6 +1,10 @@
 # Dependencies
 node_modules/
 vendor/
+.venv/
+venv/
+__pycache__/
+*.pyc
 
 # Build outputs
 dist/
@@ -24,10 +28,8 @@ logs/
 # Environment
 .env
 .env.*
-!.env.example
-!.env.template
 
-# 🚨 セキュリティ: 認証情報は絶対にコミットしない
+# Security: Never commit credentials
 credentials/
 *.key.json
 *-key.json
@@ -45,9 +47,80 @@ private/
 # Temporary files
 tmp/
 temp/
+data/
 
-# Project-specific generated files (should be generated per project)
-AUDIO_PROMPTS.json
-IMAGE_PROMPTS.json
-# GCP credentials (auto-generated)
-credentials/*.json
+# Test artifacts
+.coverage
+pytest.ini
+htmlcov/
+.pytest_cache/
+
+# Workflow/Agent files (development only)
+CLAUDE.md
+WORKFLOW_*.md
+PHASE_*.md
+AGENT_*.md
+AI_*.md
+API_*.md
+GAME_*.md
+MOBILE_*.md
+GCP_*.md
+GITHUB_*.md
+GYRO_*.md
+IMAGEN_*.md
+LYRIA_*.md
+M4_*.md
+SUBAGENT_*.md
+TASK_*.md
+TEST_*.md
+WORKTREE_*.md
+ARCHITECTURE.md
+BRANCH_LIFECYCLE.md
+CLIENT_*.md
+CODE_UPDATE_WORKFLOW.md
+CONDITIONAL_WORKFLOW.md
+CRITICAL_PATH.md
+DEDICATED_*.md
+DEFAULT_POLICY.md
+DESIGN_*.md
+DUAL_PURPOSE_WORKFLOW.md
+ERROR_HANDLING_STRATEGY.md
+EXTERNAL_*.md
+FINAL_*.md
+FIX_*.md
+FRONTEND_*.md
+PORTFOLIO_*.md
+REQUIREMENTS.md
+RESPONSIVE_*.md
+SECURITY_*.md
+SPEC.md
+TECH_STACK.md
+URGENT_*.md
+VERSION
+WBS*.json
+PROJECT_INFO.yaml
+
+# Agent config files
+agent_config.yaml
+agent_library.yaml
+
+# Development scripts
+*.sh
+!project/*.sh
+launch_*.command
+main.py
+dynamic_task_orchestrator.py
+package*.json
+
+# Source files (development tools)
+src/
+github-portfolio-publisher/
+worktrees/
+images/
+
+# GitHub workflows (development)
+.github/
+.gitignore_portfolio
+
+# Tests directory
+project/tests/
