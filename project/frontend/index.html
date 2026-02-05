@@ -433,14 +433,45 @@
                             </div>
 
                             <div class="mt-3 flex gap-2 text-xs">
-                                <span class="px-2 py-1 bg-green-100 text-green-700 rounded">
-                                    HTML: {{ project.html_count || 0 }}
+                                <span :class="[
+                                    'px-2 py-1 rounded',
+                                    project.html_count >= project.total_topics
+                                        ? 'bg-green-100 text-green-700'
+                                        : 'bg-red-100 text-red-700'
+                                ]">
+                                    HTML: {{ project.html_count || 0 }}/{{ project.total_topics }}
+                                    <span v-if="project.html_count < project.total_topics" class="ml-1">⚠️</span>
                                 </span>
-                                <span class="px-2 py-1 bg-blue-100 text-blue-700 rounded">
-                                    TXT: {{ project.txt_count || 0 }}
+                                <span :class="[
+                                    'px-2 py-1 rounded',
+                                    project.txt_count >= project.total_topics
+                                        ? 'bg-blue-100 text-blue-700'
+                                        : 'bg-red-100 text-red-700'
+                                ]">
+                                    TXT: {{ project.txt_count || 0 }}/{{ project.total_topics }}
+                                    <span v-if="project.txt_count < project.total_topics" class="ml-1">⚠️</span>
                                 </span>
-                                <span class="px-2 py-1 bg-orange-100 text-orange-700 rounded">
-                                    MP3: {{ project.mp3_count || 0 }}
+                                <span :class="[
+                                    'px-2 py-1 rounded',
+                                    project.mp3_count >= project.total_topics
+                                        ? 'bg-orange-100 text-orange-700'
+                                        : 'bg-red-100 text-red-700'
+                                ]">
+                                    MP3: {{ project.mp3_count || 0 }}/{{ project.total_topics }}
+                                    <span v-if="project.mp3_count < project.total_topics" class="ml-1">⚠️</span>
+                                </span>
+                            </div>
+                            <!-- 不足ファイル詳細（100%未満の場合のみ表示） -->
+                            <div v-if="project.progress < 100 && project.total_topics > 0" class="mt-2 text-xs text-red-600 bg-red-50 rounded p-2">
+                                <span class="font-medium">📋 不足:</span>
+                                <span v-if="project.html_count < project.total_topics" class="ml-2">
+                                    HTML -{{ project.total_topics - project.html_count }}
+                                </span>
+                                <span v-if="project.txt_count < project.total_topics" class="ml-2">
+                                    TXT -{{ project.total_topics - project.txt_count }}
+                                </span>
+                                <span v-if="project.mp3_count < project.total_topics" class="ml-2">
+                                    MP3 -{{ project.total_topics - project.mp3_count }}
                                 </span>
                             </div>
 
@@ -553,13 +584,28 @@
                             </div>
                         </div>
                         <div class="col-span-1 text-center">
-                            <span class="text-sm text-green-600">{{ project.html_count }}</span>
+                            <span :class="[
+                                'text-sm',
+                                project.html_count >= project.total_topics ? 'text-green-600' : 'text-red-600 font-bold'
+                            ]">
+                                {{ project.html_count }}<span v-if="project.html_count < project.total_topics">⚠️</span>
+                            </span>
                         </div>
                         <div class="col-span-1 text-center">
-                            <span class="text-sm text-blue-600">{{ project.txt_count }}</span>
+                            <span :class="[
+                                'text-sm',
+                                project.txt_count >= project.total_topics ? 'text-blue-600' : 'text-red-600 font-bold'
+                            ]">
+                                {{ project.txt_count }}<span v-if="project.txt_count < project.total_topics">⚠️</span>
+                            </span>
                         </div>
                         <div class="col-span-1 text-center">
-                            <span class="text-sm text-orange-500">{{ project.mp3_count }}</span>
+                            <span :class="[
+                                'text-sm',
+                                project.mp3_count >= project.total_topics ? 'text-orange-500' : 'text-red-600 font-bold'
+                            ]">
+                                {{ project.mp3_count }}<span v-if="project.mp3_count < project.total_topics">⚠️</span>
+                            </span>
                         </div>
                         <div class="col-span-2 text-center" @click.stop>
                             <select
@@ -681,16 +727,43 @@
                     <div class="mt-2 flex gap-4 text-sm">
                         <span class="flex items-center gap-1">
                             <span class="w-3 h-3 bg-green-500 rounded"></span>
-                            HTML: {{ selectedProject.html_count || 0 }}
+                            HTML: {{ selectedProject.html_count || 0 }}/{{ selectedProject.total_topics || 0 }}
+                            <span v-if="selectedProject.html_count < selectedProject.total_topics" class="text-red-500">
+                                (不足: {{ selectedProject.total_topics - selectedProject.html_count }})
+                            </span>
                         </span>
                         <span class="flex items-center gap-1">
                             <span class="w-3 h-3 bg-blue-500 rounded"></span>
-                            TXT: {{ selectedProject.txt_count || 0 }}
+                            TXT: {{ selectedProject.txt_count || 0 }}/{{ selectedProject.total_topics || 0 }}
+                            <span v-if="selectedProject.txt_count < selectedProject.total_topics" class="text-red-500">
+                                (不足: {{ selectedProject.total_topics - selectedProject.txt_count }})
+                            </span>
                         </span>
                         <span class="flex items-center gap-1">
                             <span class="w-3 h-3 bg-orange-500 rounded"></span>
-                            MP3: {{ selectedProject.mp3_count || 0 }}
+                            MP3: {{ selectedProject.mp3_count || 0 }}/{{ selectedProject.total_topics || 0 }}
+                            <span v-if="selectedProject.mp3_count < selectedProject.total_topics" class="text-red-500">
+                                (不足: {{ selectedProject.total_topics - selectedProject.mp3_count }})
+                            </span>
                         </span>
+                    </div>
+
+                    <!-- 不足ファイル一覧へのショートカット（進行中がある場合） -->
+                    <div v-if="topicSummary.in_progress > 0" class="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <span class="text-yellow-600 text-lg">⚠️</span>
+                                <span class="text-sm text-yellow-800">
+                                    <strong>{{ topicSummary.in_progress }}件</strong>のトピックが一部ファイル不足です
+                                </span>
+                            </div>
+                            <button
+                                @click="topicFilter = 'in_progress'"
+                                class="px-3 py-1 bg-yellow-500 text-white text-sm rounded hover:bg-yellow-600"
+                            >
+                                不足一覧を表示
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -784,30 +857,30 @@
                                         <div class="flex gap-2">
                                             <span
                                                 :class="[
-                                                    'w-8 h-8 flex items-center justify-center rounded text-sm',
-                                                    topic.has_html ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
+                                                    'w-8 h-8 flex items-center justify-center rounded text-sm font-medium',
+                                                    topic.has_html ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600 border-2 border-red-300'
                                                 ]"
-                                                title="HTML"
+                                                :title="topic.has_html ? 'HTML: OK' : 'HTML: 不足'"
                                             >
-                                                {{ topic.has_html ? '✓' : '□' }}
+                                                {{ topic.has_html ? '✓' : '✗' }}
                                             </span>
                                             <span
                                                 :class="[
-                                                    'w-8 h-8 flex items-center justify-center rounded text-sm',
-                                                    topic.has_txt ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'
+                                                    'w-8 h-8 flex items-center justify-center rounded text-sm font-medium',
+                                                    topic.has_txt ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-600 border-2 border-red-300'
                                                 ]"
-                                                title="TXT"
+                                                :title="topic.has_txt ? 'TXT: OK' : 'TXT: 不足'"
                                             >
-                                                {{ topic.has_txt ? '✓' : '□' }}
+                                                {{ topic.has_txt ? '✓' : '✗' }}
                                             </span>
                                             <span
                                                 :class="[
-                                                    'w-8 h-8 flex items-center justify-center rounded text-sm',
-                                                    topic.has_mp3 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-400'
+                                                    'w-8 h-8 flex items-center justify-center rounded text-sm font-medium',
+                                                    topic.has_mp3 ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-600 border-2 border-red-300'
                                                 ]"
-                                                title="MP3"
+                                                :title="topic.has_mp3 ? 'MP3: OK' : 'MP3: 不足'"
                                             >
-                                                {{ topic.has_mp3 ? '✓' : '□' }}
+                                                {{ topic.has_mp3 ? '✓' : '✗' }}
                                             </span>
                                             <span
                                                 :class="[
@@ -818,6 +891,13 @@
                                             >
                                                 {{ topic.has_ssml ? '✓' : '□' }}
                                             </span>
+                                        </div>
+                                        <!-- 不足ファイル種別を明示（進行中の場合） -->
+                                        <div v-if="topic.status === 'in_progress'" class="ml-2 text-xs text-red-600">
+                                            不足:
+                                            <span v-if="!topic.has_html">HTML</span>
+                                            <span v-if="!topic.has_txt">TXT</span>
+                                            <span v-if="!topic.has_mp3">MP3</span>
                                         </div>
                                     </div>
                                 </div>
@@ -855,30 +935,30 @@
                                     <div class="flex gap-2">
                                         <span
                                             :class="[
-                                                'w-8 h-8 flex items-center justify-center rounded text-sm',
-                                                topic.has_html ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-400'
+                                                'w-8 h-8 flex items-center justify-center rounded text-sm font-medium',
+                                                topic.has_html ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600 border-2 border-red-300'
                                             ]"
-                                            title="HTML"
+                                            :title="topic.has_html ? 'HTML: OK' : 'HTML: 不足'"
                                         >
-                                            {{ topic.has_html ? '✓' : '□' }}
+                                            {{ topic.has_html ? '✓' : '✗' }}
                                         </span>
                                         <span
                                             :class="[
-                                                'w-8 h-8 flex items-center justify-center rounded text-sm',
-                                                topic.has_txt ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-400'
+                                                'w-8 h-8 flex items-center justify-center rounded text-sm font-medium',
+                                                topic.has_txt ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-600 border-2 border-red-300'
                                             ]"
-                                            title="TXT"
+                                            :title="topic.has_txt ? 'TXT: OK' : 'TXT: 不足'"
                                         >
-                                            {{ topic.has_txt ? '✓' : '□' }}
+                                            {{ topic.has_txt ? '✓' : '✗' }}
                                         </span>
                                         <span
                                             :class="[
-                                                'w-8 h-8 flex items-center justify-center rounded text-sm',
-                                                topic.has_mp3 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-400'
+                                                'w-8 h-8 flex items-center justify-center rounded text-sm font-medium',
+                                                topic.has_mp3 ? 'bg-orange-100 text-orange-700' : 'bg-red-100 text-red-600 border-2 border-red-300'
                                             ]"
-                                            title="MP3"
+                                            :title="topic.has_mp3 ? 'MP3: OK' : 'MP3: 不足'"
                                         >
-                                            {{ topic.has_mp3 ? '✓' : '□' }}
+                                            {{ topic.has_mp3 ? '✓' : '✗' }}
                                         </span>
                                         <span
                                             :class="[
@@ -889,6 +969,13 @@
                                         >
                                             {{ topic.has_ssml ? '✓' : '□' }}
                                         </span>
+                                    </div>
+                                    <!-- 不足ファイル種別を明示（進行中の場合） -->
+                                    <div v-if="topic.status === 'in_progress'" class="ml-2 text-xs text-red-600">
+                                        不足:
+                                        <span v-if="!topic.has_html">HTML</span>
+                                        <span v-if="!topic.has_txt">TXT</span>
+                                        <span v-if="!topic.has_mp3">MP3</span>
                                     </div>
                                 </div>
                             </div>
