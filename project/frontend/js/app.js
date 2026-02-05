@@ -37,9 +37,10 @@ const app = createApp({
         const customRangeMin = ref(0);          // カスタム範囲の最小値
         const customRangeMax = ref(100);        // カスタム範囲の最大値
 
-        // 納品先・音声変換フィルター
-        const destinationFilter = ref('all');   // 'all' または destination_id
-        const ttsEngineFilter = ref('all');     // 'all' または tts_engine_id
+        // 納品先・音声変換・公開状態フィルター
+        const destinationFilter = ref('all');       // 'all' または destination_id
+        const ttsEngineFilter = ref('all');         // 'all' または tts_engine_id
+        const publicationStatusFilter = ref('all'); // 'all', 'unset', または publication_status_id
 
         // マスターデータ
         const destinations = ref([]);
@@ -139,6 +140,16 @@ const app = createApp({
             if (ttsEngineFilter.value !== 'all') {
                 const ttsId = Number(ttsEngineFilter.value);
                 list = list.filter(p => p.tts_engine_id === ttsId);
+            }
+
+            // 公開状態フィルター
+            if (publicationStatusFilter.value !== 'all') {
+                if (publicationStatusFilter.value === 'unset') {
+                    list = list.filter(p => !p.publication_status_id);
+                } else {
+                    const statusId = Number(publicationStatusFilter.value);
+                    list = list.filter(p => p.publication_status_id === statusId);
+                }
             }
 
             return list;
@@ -702,9 +713,10 @@ const app = createApp({
             customRangeMin,
             customRangeMax,
 
-            // 納品先・音声変換フィルター
+            // 納品先・音声変換・公開状態フィルター
             destinationFilter,
             ttsEngineFilter,
+            publicationStatusFilter,
 
             // マスターデータ
             destinations,
