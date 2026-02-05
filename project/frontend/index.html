@@ -303,6 +303,15 @@
                                 </option>
                             </select>
 
+                            <!-- 公開状態フィルター -->
+                            <select v-model="publicationStatusFilter" class="px-3 py-2 border rounded-lg text-sm">
+                                <option value="all">📋 公開状態: 全て</option>
+                                <option value="unset">📋 未設定</option>
+                                <option v-for="status in publicationStatuses" :key="status.id" :value="status.id">
+                                    {{ status.name }}
+                                </option>
+                            </select>
+
                             <select v-model="sortBy" class="px-3 py-2 border rounded-lg text-sm">
                                 <option value="name">名前順</option>
                                 <option value="progress">進捗順</option>
