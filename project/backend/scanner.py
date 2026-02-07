@@ -106,6 +106,11 @@ class AsyncScanner:
         try:
             start_time = datetime.now()
 
+            # 削除されたプロジェクトをクリーンアップ
+            deleted_count = await self._cleanup_deleted_projects()
+            if deleted_count > 0:
+                logger.info(f"Cleaned up {deleted_count} deleted projects")
+
             # プロジェクトフォルダを検出（WBS.json または content/ フォルダがあるもの）
             # 除外: old, 隠しフォルダ
             excluded_folders = {'old', '.git', '__pycache__', 'node_modules'}
@@ -144,6 +149,28 @@ class AsyncScanner:
 
         finally:
             self._scanning = False
+
+    async def _cleanup_deleted_projects(self) -> int:
+        """実フォルダが存在しないプロジェクトをDBから削除"""
+        deleted_count = 0
+
+        # DB内の全プロジェクトを取得
+        db_projects = await self.db.get_all_projects()
+
+        for project in db_projects:
+            project_path = Path(project['path'])
+
+            # フォルダが存在しない、またはWBS.json/contentがない場合は削除
+            if not project_path.exists():
+                logger.info(f"Project folder not found, removing from DB: {project['name']} ({project_path})")
+                await self.db.delete_project(project['id'])
+                deleted_count += 1
+            elif not (project_path / 'WBS.json').exists() and not (project_path / 'content').is_dir():
+                logger.info(f"Project has no WBS.json or content folder, removing from DB: {project['name']}")
+                await self.db.delete_project(project['id'])
+                deleted_count += 1
+
+        return deleted_count
 
     async def scan_project(self, project_path: Path) -> ScanResult:
         """単一プロジェクトをスキャン"""
