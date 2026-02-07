@@ -592,6 +592,22 @@ class Database:
             """, (destination_id, tts_engine_id, publication_status_id, project_id))
             return True
 
+    async def delete_project(self, project_id: int) -> bool:
+        """プロジェクトを削除（関連トピックも削除）"""
+        async with self._lock:
+            # トピックを先に削除（ON DELETE CASCADEがあるが明示的に）
+            await self._connection.execute(
+                "DELETE FROM topics WHERE project_id = ?",
+                (project_id,)
+            )
+            # プロジェクトを削除
+            await self._connection.execute(
+                "DELETE FROM projects WHERE id = ?",
+                (project_id,)
+            )
+            logger.info(f"Deleted project id={project_id}")
+            return True
+
     # ========== トピック操作 ==========
 
     async def get_topics_by_project(self, project_id: int) -> List[Dict[str, Any]]:
