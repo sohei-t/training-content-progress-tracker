@@ -5,6 +5,7 @@
 
 import asyncio
 import aiofiles
+import unicodedata
 from pathlib import Path
 from typing import Optional, List, Dict, Set, Tuple
 from dataclasses import dataclass, field
@@ -175,7 +176,7 @@ class AsyncScanner:
     async def scan_project(self, project_path: Path) -> ScanResult:
         """単一プロジェクトをスキャン"""
         start_time = datetime.now()
-        project_name = project_path.name
+        project_name = unicodedata.normalize('NFC', project_path.name)
 
         result = ScanResult(
             project_name=project_name,
