@@ -5,8 +5,10 @@
 
 import asyncio
 import aiofiles
+import re
 from pathlib import Path
 from typing import Optional, List, Dict, Set, Tuple
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import lru_cache
@@ -210,6 +212,13 @@ class AsyncScanner:
             if not topics and content_path.exists():
                 topics = await self._detect_topics_from_files(content_path)
 
+            # index.html等の非トピックファイルを除外
+            topics = [t for t in topics if t.base_name != 'index']
+
+            # WBS base_name と実ファイル名の不一致をフォールバックマッチングで解決
+            if topics and content_path.exists():
+                topics = self._resolve_base_names(topics, content_path)
+
             result.total_topics = len(topics)
 
             # 各トピックのファイル状態をスキャン（並列）
@@ -259,9 +268,154 @@ class AsyncScanner:
             result.duration_ms = (datetime.now() - start_time).total_seconds() * 1000
             return result
 
+    @staticmethod
+    def _extract_episode_info(base_name: str) -> Tuple[str, Optional[str]]:
+        """base_name からレベル接頭語とエピソード番号を抽出
+
+        Returns:
+            (prefix, episode): prefix はレベル名（例: "intro", "advanced"）、
+                                episode はエピソード番号（例: "01-01", "1-1-1"）。
+                                抽出できない場合は ('', None)。
+
+        Examples:
+            '01-01_title'       -> ('', '01-01')
+            'intro-1-1'         -> ('intro', '1-1')
+            'advanced_1-1_xxx'  -> ('advanced', '1-1')
+            '1-1-1_title'       -> ('', '1-1-1')
+        """
+        # アルファベット接頭語あり: advanced_1-1_xxx, intro-1-1
+        # 3階層目は同じセパレータの場合のみ許可（\3 で後方参照）
+        m = re.match(r'^([a-zA-Z]+)[-_](\d{1,3})([-_])(\d{1,3})(?:(\3)(\d{1,3}))?(?:[-_]|$)', base_name)
+        if m:
+            episode = f"{m.group(2)}-{m.group(4)}"
+            if m.group(6):  # 3階層目あり
+                episode += f"-{m.group(6)}"
+            return m.group(1).lower(), episode
+
+        # 接頭語なし: 01-01_title, 1-1-1_title
+        m = re.match(r'^(\d{1,3})([-_])(\d{1,3})(?:(\2)(\d{1,3}))?(?:[-_]|$)', base_name)
+        if m:
+            episode = f"{m.group(1)}-{m.group(3)}"
+            if m.group(5):  # 3階層目あり
+                episode += f"-{m.group(5)}"
+            return '', episode
+
+        return '', None
+
+    def _build_file_index(self, content_path: Path) -> Dict[str, List[Tuple[str, str, str]]]:
+        """content ディレクトリ内のファイルをエピソード番号でインデックス化
+
+        Returns:
+            { normalized_episode: [(base_name, prefix, subfolder), ...] }
+        """
+        index = defaultdict(list)
+
+        def scan_dir(dir_path: Path, subfolder: str = ""):
+            if not dir_path.exists():
+                return
+            for item in dir_path.iterdir():
+                if item.is_dir():
+                    if item.name.startswith('.') or item.name in ['__pycache__', 'node_modules', 'old']:
+                        continue
+                    new_sub = f"{subfolder}/{item.name}" if subfolder else item.name
+                    scan_dir(item, new_sub)
+                elif item.suffix == '.html' and item.stem != 'index':
+                    prefix, episode = self._extract_episode_info(item.stem)
+                    if episode:
+                        index[episode].append((item.stem, prefix, subfolder))
+
+        scan_dir(content_path)
+        return index
+
+    def _resolve_base_names(self, topics: List[ParsedTopic], content_path: Path) -> List[ParsedTopic]:
+        """WBS base_name が実ファイルと一致しない場合、エピソード番号でフォールバックマッチング
+
+        マッチング優先順位:
+        1. WBS base_name の完全一致（変更不要）
+        2. エピソード番号で一意マッチ
+        3. エピソード番号 + 接頭語（レベル名）で絞り込み
+        4. エピソード番号 + サブフォルダで絞り込み
+        """
+        # ファイルインデックスを構築
+        file_index = self._build_file_index(content_path)
+
+        resolved = []
+        resolved_count = 0
+
+        for topic in topics:
+            # 1. 完全一致チェック
+            search_path = content_path / topic.subfolder if topic.subfolder else content_path
+            if (search_path / f"{topic.base_name}.html").exists():
+                resolved.append(topic)
+                continue
+
+            # エピソード番号を抽出
+            wbs_prefix, episode = self._extract_episode_info(topic.base_name)
+            if not episode:
+                resolved.append(topic)
+                continue
+
+            candidates = file_index.get(episode, [])
+
+            if not candidates:
+                logger.warning(
+                    f"No file found for ep={episode} (WBS base_name: {topic.base_name})"
+                )
+                resolved.append(topic)
+                continue
+
+            # サブフォルダが指定されていれば、同じサブフォルダの候補に絞る
+            if topic.subfolder:
+                subfolder_filtered = [c for c in candidates if c[2] == topic.subfolder]
+                if subfolder_filtered:
+                    candidates = subfolder_filtered
+
+            # 2. 一意マッチ
+            if len(candidates) == 1:
+                actual_base, _, actual_subfolder = candidates[0]
+                logger.info(f"Resolved: {topic.base_name} -> {actual_base} (ep={episode})")
+                resolved.append(ParsedTopic(
+                    topic_id=topic.topic_id,
+                    chapter=topic.chapter,
+                    title=topic.title,
+                    base_name=actual_base,
+                    subfolder=actual_subfolder
+                ))
+                resolved_count += 1
+                continue
+
+            # 3. 接頭語で絞り込み
+            if wbs_prefix:
+                prefix_filtered = [c for c in candidates if c[1] == wbs_prefix]
+                if len(prefix_filtered) == 1:
+                    actual_base, _, actual_subfolder = prefix_filtered[0]
+                    logger.info(
+                        f"Resolved (prefix={wbs_prefix}): {topic.base_name} -> {actual_base}"
+                    )
+                    resolved.append(ParsedTopic(
+                        topic_id=topic.topic_id,
+                        chapter=topic.chapter,
+                        title=topic.title,
+                        base_name=actual_base,
+                        subfolder=actual_subfolder
+                    ))
+                    resolved_count += 1
+                    continue
+
+            # 4. 解決不能
+            logger.warning(
+                f"Ambiguous match for {topic.base_name} (ep={episode}): "
+                f"{[c[0] for c in candidates]}"
+            )
+            resolved.append(topic)
+
+        if resolved_count > 0:
+            logger.info(f"Resolved {resolved_count} WBS base_name mismatches by episode number")
+
+        return resolved
+
     async def _detect_topics_from_files(self, content_path: Path, subfolder: str = "") -> List[ParsedTopic]:
         """ファイルシステムからトピックを再帰的に検出（数値-数値パターンを含むファイルのみ）"""
-        import re
         topics = []
         seen_bases = set()  # (subfolder, base_name) のペアで重複チェック
 
@@ -316,7 +470,43 @@ class AsyncScanner:
                         subfolder=subfolder
                     ))
 
-        return sorted(topics, key=lambda t: (t.subfolder, t.base_name))
+        # レベル対応ソート（入門→初級→中級→上級の順）
+        LEVEL_ORDER = {
+            'intro': 0, 'introduction': 0, 'beginner': 0,
+            'basic': 1, 'elementary': 1,
+            'intermediate': 2,
+            'advanced': 3,
+        }
+
+        def sort_key(t):
+            subfolder = t.subfolder or ''
+            base_name = t.base_name
+            level_order = 0
+
+            # サブフォルダからレベル検出
+            if subfolder:
+                folder = subfolder.split('/')[-1].lower()
+                level_order = LEVEL_ORDER.get(folder, 0)
+
+            # レベルプレフィックス: "intro-1-1", "advanced_2-3"
+            m = re.match(r'^([a-zA-Z]+)[-_](\d+)[-_](\d+)', base_name)
+            if m:
+                level_order = LEVEL_ORDER.get(m.group(1).lower(), 99)
+                return (level_order, int(m.group(2)), int(m.group(3)), base_name)
+
+            # 3階層数値: "1-1-1_title"
+            m = re.match(r'^(\d+)[-_](\d+)[-_](\d+)', base_name)
+            if m:
+                return (int(m.group(1)), int(m.group(2)), int(m.group(3)), base_name)
+
+            # 2階層数値: "01-01_title"
+            m = re.match(r'^(\d+)[-_](\d+)', base_name)
+            if m:
+                return (level_order, int(m.group(1)), int(m.group(2)), base_name)
+
+            return (99, 0, 0, base_name)
+
+        return sorted(topics, key=sort_key)
 
     async def _scan_topic_files(
         self,
@@ -325,8 +515,6 @@ class AsyncScanner:
         content_path: Path
     ) -> Dict:
         """トピックのファイル状態をスキャン（数値-数値パターンを含むファイル、サブフォルダ対応）"""
-        import re
-
         # 数値-数値または数値_数値パターン（例: 1-1, 01-02, 2-3, 1_1, 10_2）
         topic_pattern = re.compile(r'\d+[-_]\d+')
 
