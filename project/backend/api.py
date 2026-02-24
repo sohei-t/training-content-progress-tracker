@@ -23,6 +23,7 @@ from .models import (
     StatsResponse,
     ErrorResponse
 )
+from .publish_service import get_publish_service
 
 import logging
 
@@ -691,6 +692,133 @@ async def update_project_settings(project_id: int, data: dict):
     except Exception as e:
         logger.error(f"Error updating project settings: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== 公開API ==========
+
+@router.post("/projects/{project_id}/publish")
+async def publish_project(
+    project_id: int,
+    background_tasks: BackgroundTasks
+):
+    """プロジェクトのコンテンツをPersonal Video Platformに公開"""
+    try:
+        db = await get_database()
+        project = await db.get_project(project_id)
+
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        # トピック一覧取得
+        topics = await db.get_topics_by_project(project_id)
+
+        if not topics:
+            raise HTTPException(status_code=400, detail="公開可能なトピックがありません")
+
+        # バックグラウンドで公開処理実行
+        background_tasks.add_task(
+            _run_publish,
+            project_id,
+            project['name'],
+            project['path'],
+            [dict(t) for t in topics]
+        )
+
+        return {
+            "status": "accepted",
+            "message": f"「{project['name']}」の公開を開始しました",
+            "total_topics": len(topics)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error triggering publish: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _run_publish(
+    project_id: int,
+    project_name: str,
+    project_path: str,
+    topics: list
+):
+    """バックグラウンド公開処理"""
+    ws = get_connection_manager()
+
+    try:
+        # publication_status から access_type を決定
+        db = await get_database()
+        project = await db.get_project(project_id)
+        access_type = 'public'  # デフォルト
+        if project and project.get('publication_status_name'):
+            status_name = project['publication_status_name']
+            if '無料' in status_name:
+                access_type = 'free'
+            elif 'ドラフト' in status_name or '非公開' in status_name:
+                access_type = 'draft'
+
+        # 開始通知
+        await ws.broadcast(
+            "publish_started",
+            {
+                "project_id": project_id,
+                "project_name": project_name,
+                "total_topics": len(topics)
+            }
+        )
+
+        service = get_publish_service()
+
+        async def progress_callback(current, total, title):
+            await ws.broadcast(
+                "publish_progress",
+                {
+                    "project_id": project_id,
+                    "current": current,
+                    "total": total,
+                    "title": title
+                }
+            )
+
+        result = await service.publish_project(
+            project_name=project_name,
+            project_path=project_path,
+            topics=topics,
+            progress_callback=progress_callback,
+            access_type=access_type
+        )
+
+        # 完了通知
+        await ws.broadcast(
+            "publish_completed",
+            {
+                "project_id": project_id,
+                "project_name": project_name,
+                "success": result.success,
+                "classroom_id": result.classroom_id,
+                "uploaded": result.uploaded_contents,
+                "total": result.total_contents,
+                "errors": result.errors[:5]
+            }
+        )
+
+        logger.info(
+            f"Publish completed: {project_name} - "
+            f"{result.uploaded_contents}/{result.total_contents} contents"
+        )
+
+    except Exception as e:
+        logger.error(f"Publish error for {project_name}: {e}")
+        await ws.broadcast(
+            "publish_completed",
+            {
+                "project_id": project_id,
+                "project_name": project_name,
+                "success": False,
+                "errors": [str(e)]
+            }
+        )
 
 
 # ========== RAG API ==========
