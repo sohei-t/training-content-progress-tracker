@@ -267,6 +267,26 @@ class AsyncScanner:
                 mp3_total_duration_ms=result.mp3_total_duration_ms
             )
 
+            # RAG chunks 検出
+            rag_chunks_path = project_path / "rag_chunks.json"
+            has_rag_chunks = rag_chunks_path.exists()
+            await self.db.update_project_has_rag_chunks(project_id, has_rag_chunks)
+
+            if has_rag_chunks:
+                # チャンク数も更新
+                try:
+                    with open(rag_chunks_path, 'r', encoding='utf-8') as f:
+                        rag_data = json.load(f)
+                    chunk_count = rag_data.get('chunk_count', 0)
+                    await self.db.upsert_rag_index(
+                        project_id=project_id,
+                        status='chunks_ready',
+                        chunk_count=chunk_count
+                    )
+                    logger.info(f"RAG chunks detected: {project_name} ({chunk_count} chunks)")
+                except Exception as e:
+                    logger.warning(f"Failed to parse rag_chunks.json for {project_name}: {e}")
+
             result.duration_ms = (datetime.now() - start_time).total_seconds() * 1000
             logger.info(
                 f"Scanned {project_name}: {result.total_topics} topics, "

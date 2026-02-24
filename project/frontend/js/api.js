@@ -363,6 +363,31 @@ const API = {
         return await this.put('/check-statuses/reorder', data);
     },
 
+    // ========== RAG API ==========
+
+    /**
+     * RAGインデックス状態取得
+     */
+    async getRagStatus(projectId) {
+        return await this.get(`/projects/${projectId}/rag-status`, { noCache: true });
+    },
+
+    /**
+     * RAGインデックス構築開始
+     */
+    async buildRagIndex(projectId) {
+        this.clearCache();
+        return await this.post(`/projects/${projectId}/rag-build`);
+    },
+
+    /**
+     * RAGインデックス削除
+     */
+    async deleteRagIndex(projectId) {
+        this.clearCache();
+        return await this.delete(`/projects/${projectId}/rag-index`);
+    },
+
     // ========== ヘルスチェック ==========
 
     /**
