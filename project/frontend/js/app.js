@@ -32,6 +32,10 @@ const app = createApp({
         const topicFilter = ref('all');
         const toasts = ref([]);
 
+        // 公開状態
+        const isPublishing = ref(false);
+        const publishProgress = ref({ current: 0, total: 0, title: '' });
+
         // 新機能: 表示モードとプロジェクトフィルター
         const viewMode = ref('card');           // 'card' または 'list'
         const projectFilter = ref('all');       // 'all', 'completed', 'incomplete', 'custom'
@@ -759,6 +763,28 @@ const app = createApp({
             }, 3000);
         }
 
+        // プロジェクト公開
+        async function publishProject() {
+            if (!selectedProject.value || isPublishing.value) return;
+
+            const projectName = selectedProject.value.name;
+            if (!confirm(`「${projectName}」をVideo Platformに公開しますか？\n\nHTML・MP3ファイルがアップロードされます。`)) {
+                return;
+            }
+
+            isPublishing.value = true;
+            publishProgress.value = { current: 0, total: 0, title: '' };
+            showToast('公開処理を開始しました...', 'info');
+
+            try {
+                await API.publishProject(selectedProject.value.id);
+            } catch (error) {
+                console.error('Failed to trigger publish:', error);
+                showToast('公開の開始に失敗しました', 'error');
+                isPublishing.value = false;
+            }
+        }
+
         // ========== RAGメソッド ==========
 
         // RAGステータス取得
@@ -933,6 +959,31 @@ const app = createApp({
                 );
             });
 
+            // 公開進捗
+            wsService.on('publish_progress', (data) => {
+                publishProgress.value = {
+                    current: data.current,
+                    total: data.total,
+                    title: data.title
+                };
+            });
+
+            // 公開完了
+            wsService.on('publish_completed', (data) => {
+                isPublishing.value = false;
+                if (data.success) {
+                    showToast(
+                        `公開完了: ${data.uploaded}/${data.total} コンテンツ`,
+                        'success'
+                    );
+                } else {
+                    const errorMsg = data.errors && data.errors.length > 0
+                        ? data.errors[0]
+                        : '不明なエラー';
+                    showToast(`公開エラー: ${errorMsg}`, 'error');
+                }
+            });
+
             // RAG構築進捗
             wsService.on('rag_build_progress', (data) => {
                 if (selectedProject.value && selectedProject.value.id === data.project_id) {
@@ -1057,6 +1108,11 @@ const app = createApp({
             getPublicationStatusLabel,
             getPublicationStatusClass,
             isPublished,
+
+            // 公開
+            isPublishing,
+            publishProgress,
+            publishProject,
 
             // RAG
             ragStatus,
