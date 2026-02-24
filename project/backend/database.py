@@ -214,6 +214,23 @@ class Database:
                 )
             """)
 
+            # rag_indexes テーブル
+            await self._connection.execute("""
+                CREATE TABLE IF NOT EXISTS rag_indexes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project_id INTEGER NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
+                    status TEXT NOT NULL DEFAULT 'none'
+                        CHECK(status IN ('none', 'chunks_ready', 'indexing', 'indexed', 'failed')),
+                    chunk_count INTEGER DEFAULT 0,
+                    embedding_model TEXT DEFAULT 'models/gemini-embedding-001',
+                    generation_model TEXT DEFAULT 'gemini-2.5-flash',
+                    index_built_at TEXT,
+                    error_message TEXT,
+                    created_at TEXT DEFAULT (datetime('now')),
+                    updated_at TEXT DEFAULT (datetime('now'))
+                )
+            """)
+
             # インデックス作成（パフォーマンス最適化）
             await self._connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_projects_name ON projects(name)"
@@ -232,6 +249,9 @@ class Database:
             )
             await self._connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_scan_history_started ON scan_history(started_at)"
+            )
+            await self._connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_rag_indexes_project ON rag_indexes(project_id)"
             )
 
             logger.info("Database tables initialized with optimized indexes")
@@ -303,6 +323,13 @@ class Database:
                 "ALTER TABLE projects ADD COLUMN mp3_total_duration_ms INTEGER DEFAULT 0"
             )
             logger.info("Added mp3_total_duration_ms column to projects table")
+
+        # has_rag_chunks カラムが存在しない場合は追加
+        if 'has_rag_chunks' not in columns:
+            await self._connection.execute(
+                "ALTER TABLE projects ADD COLUMN has_rag_chunks INTEGER DEFAULT 0"
+            )
+            logger.info("Added has_rag_chunks column to projects table")
 
         # topicsテーブルのマイグレーション（UNIQUE制約の変更を含む）
         await self._migrate_topics_table()
@@ -630,38 +657,46 @@ class Database:
     # ========== プロジェクト操作 ==========
 
     async def get_all_projects(self) -> List[Dict[str, Any]]:
-        """全プロジェクト取得（納品先・音声変換エンジン・公開状態・チェック進捗名含む）"""
+        """全プロジェクト取得（納品先・音声変換エンジン・公開状態・チェック進捗名・RAG情報含む）"""
         cursor = await self._connection.execute("""
             SELECT
                 p.*,
                 d.name as destination_name,
                 t.name as tts_engine_name,
                 ps.name as publication_status_name,
-                cs.name as check_status_name
+                cs.name as check_status_name,
+                ri.status as rag_status,
+                ri.chunk_count as rag_chunk_count,
+                ri.index_built_at as rag_index_built_at
             FROM projects p
             LEFT JOIN destinations d ON p.destination_id = d.id
             LEFT JOIN tts_engines t ON p.tts_engine_id = t.id
             LEFT JOIN publication_statuses ps ON p.publication_status_id = ps.id
             LEFT JOIN check_statuses cs ON p.check_status_id = cs.id
+            LEFT JOIN rag_indexes ri ON p.id = ri.project_id
             ORDER BY p.name
         """)
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
 
     async def get_project(self, project_id: int) -> Optional[Dict[str, Any]]:
-        """プロジェクト単体取得（納品先・音声変換エンジン・公開状態・チェック進捗名含む）"""
+        """プロジェクト単体取得（納品先・音声変換エンジン・公開状態・チェック進捗名・RAG情報含む）"""
         cursor = await self._connection.execute("""
             SELECT
                 p.*,
                 d.name as destination_name,
                 t.name as tts_engine_name,
                 ps.name as publication_status_name,
-                cs.name as check_status_name
+                cs.name as check_status_name,
+                ri.status as rag_status,
+                ri.chunk_count as rag_chunk_count,
+                ri.index_built_at as rag_index_built_at
             FROM projects p
             LEFT JOIN destinations d ON p.destination_id = d.id
             LEFT JOIN tts_engines t ON p.tts_engine_id = t.id
             LEFT JOIN publication_statuses ps ON p.publication_status_id = ps.id
             LEFT JOIN check_statuses cs ON p.check_status_id = cs.id
+            LEFT JOIN rag_indexes ri ON p.id = ri.project_id
             WHERE p.id = ?
         """, (project_id,))
         row = await cursor.fetchone()
@@ -950,6 +985,74 @@ class Database:
             data["overall_progress"] = 0.0
 
         return data
+
+    # ========== RAG インデックス操作 ==========
+
+    async def get_rag_index(self, project_id: int) -> Optional[Dict[str, Any]]:
+        """RAGインデックス情報取得"""
+        cursor = await self._connection.execute(
+            "SELECT * FROM rag_indexes WHERE project_id = ?",
+            (project_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def upsert_rag_index(
+        self,
+        project_id: int,
+        status: str = 'none',
+        chunk_count: int = 0,
+        error_message: Optional[str] = None
+    ) -> int:
+        """RAGインデックスをUPSERT"""
+        async with self._lock:
+            cursor = await self._connection.execute("""
+                INSERT INTO rag_indexes (project_id, status, chunk_count, error_message)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(project_id) DO UPDATE SET
+                    status = excluded.status,
+                    chunk_count = excluded.chunk_count,
+                    error_message = excluded.error_message,
+                    index_built_at = CASE WHEN excluded.status = 'indexed' THEN datetime('now') ELSE index_built_at END,
+                    updated_at = datetime('now')
+                RETURNING id
+            """, (project_id, status, chunk_count, error_message))
+            row = await cursor.fetchone()
+            return row[0]
+
+    async def update_rag_index_status(
+        self,
+        project_id: int,
+        status: str,
+        error_message: Optional[str] = None
+    ) -> None:
+        """RAGインデックスステータスを更新"""
+        async with self._lock:
+            await self._connection.execute("""
+                UPDATE rag_indexes SET
+                    status = ?,
+                    error_message = ?,
+                    index_built_at = CASE WHEN ? = 'indexed' THEN datetime('now') ELSE index_built_at END,
+                    updated_at = datetime('now')
+                WHERE project_id = ?
+            """, (status, error_message, status, project_id))
+
+    async def delete_rag_index(self, project_id: int) -> bool:
+        """RAGインデックスを削除"""
+        async with self._lock:
+            await self._connection.execute(
+                "DELETE FROM rag_indexes WHERE project_id = ?",
+                (project_id,)
+            )
+            return True
+
+    async def update_project_has_rag_chunks(self, project_id: int, has_rag_chunks: bool) -> None:
+        """プロジェクトのhas_rag_chunksを更新"""
+        async with self._lock:
+            await self._connection.execute(
+                "UPDATE projects SET has_rag_chunks = ?, updated_at = datetime('now') WHERE id = ?",
+                (int(has_rag_chunks), project_id)
+            )
 
 
 # シングルトンインスタンス
