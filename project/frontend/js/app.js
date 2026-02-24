@@ -42,16 +42,25 @@ const app = createApp({
         const destinationFilter = ref('all');       // 'all' または destination_id
         const ttsEngineFilter = ref('all');         // 'all' または tts_engine_id
         const publicationStatusFilter = ref('all'); // 'all', 'unset', または publication_status_id
+        const checkStatusFilter = ref('all');          // 'all', 'unset', または check_status_id
 
         // マスターデータ
         const destinations = ref([]);
         const ttsEngines = ref([]);
         const publicationStatuses = ref([]);
+        const checkStatuses = ref([]);
 
         // 設定画面の状態
-        const settingsTab = ref('destinations'); // 'destinations', 'tts-engines', 'publication-statuses'
+        const settingsTab = ref('destinations'); // 'destinations', 'tts-engines', 'publication-statuses', 'check-statuses'
         const editingItem = ref(null);           // 編集中のアイテム
         const newItemName = ref('');             // 新規追加時の名前
+
+        // ドラッグ並べ替え用 ref
+        const destinationListRef = ref(null);
+        const ttsEngineListRef = ref(null);
+        const publicationStatusListRef = ref(null);
+        const checkStatusListRef = ref(null);
+        const sortableInstances = {};
 
         // フィルターラベル
         const filterLabels = {
@@ -150,6 +159,16 @@ const app = createApp({
                 } else {
                     const statusId = Number(publicationStatusFilter.value);
                     list = list.filter(p => p.publication_status_id === statusId);
+                }
+            }
+
+            // チェック進捗フィルター
+            if (checkStatusFilter.value !== 'all') {
+                if (checkStatusFilter.value === 'unset') {
+                    list = list.filter(p => !p.check_status_id);
+                } else {
+                    const checkId = Number(checkStatusFilter.value);
+                    list = list.filter(p => p.check_status_id === checkId);
                 }
             }
 
@@ -257,14 +276,16 @@ const app = createApp({
         // マスターデータを取得
         async function fetchMasterData() {
             try {
-                const [destData, ttsData, pubData] = await Promise.all([
+                const [destData, ttsData, pubData, checkData] = await Promise.all([
                     API.getDestinations(),
                     API.getTtsEngines(),
-                    API.getPublicationStatuses()
+                    API.getPublicationStatuses(),
+                    API.getCheckStatuses()
                 ]);
                 destinations.value = destData.destinations || [];
                 ttsEngines.value = ttsData.tts_engines || [];
                 publicationStatuses.value = pubData.publication_statuses || [];
+                checkStatuses.value = checkData.check_statuses || [];
             } catch (error) {
                 console.error('Failed to fetch master data:', error);
             }
@@ -293,7 +314,10 @@ const app = createApp({
             if (project) {
                 updateProjectSettings(projectId, {
                     destination_id: destId,
-                    tts_engine_id: project.tts_engine_id
+                    tts_engine_id: project.tts_engine_id,
+                    publication_status_id: project.publication_status_id,
+                    check_status_id: project.check_status_id,
+                    notes: project.notes
                 });
             }
         }
@@ -305,7 +329,10 @@ const app = createApp({
             if (project) {
                 updateProjectSettings(projectId, {
                     destination_id: project.destination_id,
-                    tts_engine_id: ttsId
+                    tts_engine_id: ttsId,
+                    publication_status_id: project.publication_status_id,
+                    check_status_id: project.check_status_id,
+                    notes: project.notes
                 });
             }
         }
@@ -318,10 +345,41 @@ const app = createApp({
                 updateProjectSettings(projectId, {
                     destination_id: project.destination_id,
                     tts_engine_id: project.tts_engine_id,
-                    publication_status_id: pubStatusId
+                    publication_status_id: pubStatusId,
+                    check_status_id: project.check_status_id,
+                    notes: project.notes
                 });
             }
         }
+
+        // チェック進捗の変更
+        function onCheckStatusChange(projectId, statusId) {
+            const checkId = statusId === '' ? null : Number(statusId);
+            const project = projects.value.find(p => p.id === projectId);
+            if (project) {
+                updateProjectSettings(projectId, {
+                    destination_id: project.destination_id,
+                    tts_engine_id: project.tts_engine_id,
+                    publication_status_id: project.publication_status_id,
+                    check_status_id: checkId,
+                    notes: project.notes
+                });
+            }
+        }
+
+        // 備考の変更（デバウンス付き）
+        const onNotesChange = debounce((projectId, notes) => {
+            const project = projects.value.find(p => p.id === projectId);
+            if (project) {
+                updateProjectSettings(projectId, {
+                    destination_id: project.destination_id,
+                    tts_engine_id: project.tts_engine_id,
+                    publication_status_id: project.publication_status_id,
+                    check_status_id: project.check_status_id,
+                    notes: notes
+                });
+            }
+        }, 500);
 
         // 公開状態のラベル取得（マスターデータから）
         function getPublicationStatusLabel(statusId) {
@@ -339,6 +397,14 @@ const app = createApp({
             if (status.name.includes('無料')) return 'bg-green-100 text-green-700';
             if (status.name.includes('有料')) return 'bg-yellow-100 text-yellow-700';
             return 'bg-gray-100 text-gray-700';
+        }
+
+        // プロジェクトが公開中かどうか判定（「非公開」は除外）
+        function isPublished(project) {
+            if (!project.publication_status_id) return false;
+            const status = publicationStatuses.value.find(s => s.id === project.publication_status_id);
+            if (!status) return false;
+            return status.name.includes('公開') && !status.name.includes('非公開');
         }
 
         // ========== マスター管理メソッド ==========
@@ -466,6 +532,47 @@ const app = createApp({
             }
         }
 
+        // チェック進捗の追加
+        async function addCheckStatus() {
+            if (!newItemName.value.trim()) return;
+            try {
+                await API.createCheckStatus({ name: newItemName.value.trim() });
+                newItemName.value = '';
+                await fetchMasterData();
+                showToast('追加しました', 'success');
+            } catch (error) {
+                console.error('Failed to create check status:', error);
+                showToast('追加に失敗しました', 'error');
+            }
+        }
+
+        // チェック進捗の更新
+        async function updateCheckStatus(id, name) {
+            try {
+                await API.updateCheckStatus(id, { name });
+                editingItem.value = null;
+                await fetchMasterData();
+                showToast('更新しました', 'success');
+            } catch (error) {
+                console.error('Failed to update check status:', error);
+                showToast('更新に失敗しました', 'error');
+            }
+        }
+
+        // チェック進捗の削除
+        async function deleteCheckStatus(id) {
+            if (!confirm('このチェック進捗を削除しますか？関連するプロジェクトの設定は未設定になります。')) return;
+            try {
+                await API.deleteCheckStatus(id);
+                await fetchMasterData();
+                await fetchProjects(); // プロジェクトも再取得
+                showToast('削除しました', 'success');
+            } catch (error) {
+                console.error('Failed to delete check status:', error);
+                showToast('削除に失敗しました', 'error');
+            }
+        }
+
         // 編集開始
         function startEditing(item) {
             editingItem.value = { ...item };
@@ -485,8 +592,71 @@ const app = createApp({
                 updateTtsEngine(editingItem.value.id, editingItem.value.name.trim());
             } else if (settingsTab.value === 'publication-statuses') {
                 updatePublicationStatus(editingItem.value.id, editingItem.value.name.trim());
+            } else if (settingsTab.value === 'check-statuses') {
+                updateCheckStatus(editingItem.value.id, editingItem.value.name.trim());
             }
         }
+
+        // ========== ドラッグ並べ替え ==========
+
+        function initSortable(elRef, dataArray, apiMethod, key) {
+            if (sortableInstances[key]) {
+                sortableInstances[key].destroy();
+                delete sortableInstances[key];
+            }
+            const el = elRef.value;
+            if (!el || typeof Sortable === 'undefined') return;
+            sortableInstances[key] = Sortable.create(el, {
+                handle: '.drag-handle',
+                animation: 150,
+                onEnd: async (evt) => {
+                    if (evt.oldIndex === evt.newIndex) return;
+                    // DOM 上の data-id 順で ordered_ids を取得
+                    const items = el.querySelectorAll('[data-id]');
+                    const ordered_ids = Array.from(items).map(item => Number(item.dataset.id));
+                    try {
+                        await apiMethod({ ordered_ids });
+                        await fetchMasterData();
+                        showToast('並び順を更新しました', 'success');
+                    } catch (error) {
+                        console.error('Reorder failed:', error);
+                        showToast('並べ替えに失敗しました', 'error');
+                        await fetchMasterData();
+                    }
+                }
+            });
+        }
+
+        function initCurrentTabSortable() {
+            nextTick(() => {
+                switch (settingsTab.value) {
+                    case 'destinations':
+                        initSortable(destinationListRef, destinations, API.reorderDestinations.bind(API), 'destinations');
+                        break;
+                    case 'tts-engines':
+                        initSortable(ttsEngineListRef, ttsEngines, API.reorderTtsEngines.bind(API), 'tts-engines');
+                        break;
+                    case 'publication-statuses':
+                        initSortable(publicationStatusListRef, publicationStatuses, API.reorderPublicationStatuses.bind(API), 'publication-statuses');
+                        break;
+                    case 'check-statuses':
+                        initSortable(checkStatusListRef, checkStatuses, API.reorderCheckStatuses.bind(API), 'check-statuses');
+                        break;
+                }
+            });
+        }
+
+        // settingsTab 変更時に SortableJS を初期化
+        watch(settingsTab, () => {
+            initCurrentTabSortable();
+        });
+
+        // 設定画面に遷移した際にも初期化
+        watch(currentView, (newView) => {
+            if (newView === 'settings') {
+                initCurrentTabSortable();
+            }
+        });
 
         // 統計を更新
         function updateStats() {
@@ -728,20 +898,28 @@ const app = createApp({
             customRangeMin,
             customRangeMax,
 
-            // 納品先・音声変換・公開状態フィルター
+            // 納品先・音声変換・公開状態・チェック進捗フィルター
             destinationFilter,
             ttsEngineFilter,
             publicationStatusFilter,
+            checkStatusFilter,
 
             // マスターデータ
             destinations,
             ttsEngines,
             publicationStatuses,
+            checkStatuses,
 
             // 設定画面
             settingsTab,
             editingItem,
             newItemName,
+
+            // ドラッグ並べ替え用 ref
+            destinationListRef,
+            ttsEngineListRef,
+            publicationStatusListRef,
+            checkStatusListRef,
 
             // 算出プロパティ
             sortedProjects,
@@ -769,8 +947,11 @@ const app = createApp({
             onDestinationChange,
             onTtsEngineChange,
             onPublicationStatusChange,
+            onCheckStatusChange,
+            onNotesChange,
             getPublicationStatusLabel,
             getPublicationStatusClass,
+            isPublished,
 
             // マスター管理
             addDestination,
@@ -782,6 +963,9 @@ const app = createApp({
             addPublicationStatus,
             updatePublicationStatus,
             deletePublicationStatus,
+            addCheckStatus,
+            updateCheckStatus,
+            deleteCheckStatus,
             startEditing,
             cancelEditing,
             saveEditing
