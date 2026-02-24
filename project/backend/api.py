@@ -346,6 +346,23 @@ async def create_destination(data: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.put("/destinations/reorder")
+async def reorder_destinations(data: dict):
+    """納品先の並べ替え"""
+    try:
+        ordered_ids = data.get('ordered_ids')
+        if not ordered_ids or not isinstance(ordered_ids, list):
+            raise HTTPException(status_code=400, detail="ordered_ids は必須です")
+        db = await get_database()
+        await db.reorder_destinations(ordered_ids)
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error reordering destinations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.put("/destinations/{destination_id}")
 async def update_destination(destination_id: int, data: dict):
     """納品先更新"""
@@ -413,6 +430,23 @@ async def create_tts_engine(data: dict):
         raise
     except Exception as e:
         logger.error(f"Error creating TTS engine: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/tts-engines/reorder")
+async def reorder_tts_engines(data: dict):
+    """音声変換エンジンの並べ替え"""
+    try:
+        ordered_ids = data.get('ordered_ids')
+        if not ordered_ids or not isinstance(ordered_ids, list):
+            raise HTTPException(status_code=400, detail="ordered_ids は必須です")
+        db = await get_database()
+        await db.reorder_tts_engines(ordered_ids)
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error reordering TTS engines: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -486,6 +520,23 @@ async def create_publication_status(data: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.put("/publication-statuses/reorder")
+async def reorder_publication_statuses(data: dict):
+    """公開状態の並べ替え"""
+    try:
+        ordered_ids = data.get('ordered_ids')
+        if not ordered_ids or not isinstance(ordered_ids, list):
+            raise HTTPException(status_code=400, detail="ordered_ids は必須です")
+        db = await get_database()
+        await db.reorder_publication_statuses(ordered_ids)
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error reordering publication statuses: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.put("/publication-statuses/{publication_status_id}")
 async def update_publication_status(publication_status_id: int, data: dict):
     """公開状態更新"""
@@ -520,11 +571,98 @@ async def delete_publication_status(publication_status_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ========== チェック進捗マスターAPI ==========
+
+@router.get("/check-statuses")
+async def get_check_statuses():
+    """チェック進捗一覧取得"""
+    try:
+        db = await get_database()
+        check_statuses = await db.get_all_check_statuses()
+        return {"check_statuses": check_statuses}
+    except Exception as e:
+        logger.error(f"Error getting check statuses: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/check-statuses")
+async def create_check_status(data: dict):
+    """チェック進捗作成"""
+    try:
+        name = data.get('name')
+        if not name:
+            raise HTTPException(status_code=400, detail="名前は必須です")
+
+        display_order = data.get('display_order', 0)
+
+        db = await get_database()
+        check_status_id = await db.create_check_status(name, display_order)
+        check_status = await db.get_check_status(check_status_id)
+
+        return {"check_status": check_status}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating check status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/check-statuses/reorder")
+async def reorder_check_statuses(data: dict):
+    """チェック進捗の並べ替え"""
+    try:
+        ordered_ids = data.get('ordered_ids')
+        if not ordered_ids or not isinstance(ordered_ids, list):
+            raise HTTPException(status_code=400, detail="ordered_ids は必須です")
+        db = await get_database()
+        await db.reorder_check_statuses(ordered_ids)
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error reordering check statuses: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/check-statuses/{check_status_id}")
+async def update_check_status(check_status_id: int, data: dict):
+    """チェック進捗更新"""
+    try:
+        name = data.get('name')
+        if not name:
+            raise HTTPException(status_code=400, detail="名前は必須です")
+
+        display_order = data.get('display_order')
+
+        db = await get_database()
+        await db.update_check_status(check_status_id, name, display_order)
+        check_status = await db.get_check_status(check_status_id)
+
+        return {"check_status": check_status}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating check status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/check-statuses/{check_status_id}")
+async def delete_check_status(check_status_id: int):
+    """チェック進捗削除"""
+    try:
+        db = await get_database()
+        await db.delete_check_status(check_status_id)
+        return {"status": "deleted"}
+    except Exception as e:
+        logger.error(f"Error deleting check status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ========== プロジェクト設定API ==========
 
 @router.put("/projects/{project_id}/settings")
 async def update_project_settings(project_id: int, data: dict):
-    """プロジェクト設定更新（納品先・音声変換エンジン・公開状態）"""
+    """プロジェクト設定更新（納品先・音声変換エンジン・公開状態・チェック進捗・備考）"""
     try:
         db = await get_database()
 
@@ -536,8 +674,13 @@ async def update_project_settings(project_id: int, data: dict):
         destination_id = data.get('destination_id')
         tts_engine_id = data.get('tts_engine_id')
         publication_status_id = data.get('publication_status_id')
+        check_status_id = data.get('check_status_id')
+        notes = data.get('notes')
 
-        await db.update_project_settings(project_id, destination_id, tts_engine_id, publication_status_id)
+        await db.update_project_settings(
+            project_id, destination_id, tts_engine_id,
+            publication_status_id, check_status_id, notes
+        )
 
         # 更新後のプロジェクトを取得
         updated_project = await db.get_project(project_id)
