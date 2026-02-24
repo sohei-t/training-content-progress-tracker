@@ -693,6 +693,155 @@ async def update_project_settings(project_id: int, data: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ========== RAG API ==========
+
+@router.get("/projects/{project_id}/rag-status")
+async def get_rag_status(project_id: int):
+    """RAGインデックス状態取得"""
+    try:
+        db = await get_database()
+        project = await db.get_project(project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        rag_index = await db.get_rag_index(project_id)
+
+        return {
+            "project_id": project_id,
+            "has_rag_chunks": bool(project.get('has_rag_chunks', 0)),
+            "rag_index": rag_index
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting RAG status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/projects/{project_id}/rag-build")
+async def build_rag_index(
+    project_id: int,
+    background_tasks: BackgroundTasks
+):
+    """RAGインデックス構築開始（バックグラウンド）"""
+    try:
+        db = await get_database()
+        project = await db.get_project(project_id)
+
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        if not project.get('has_rag_chunks', 0):
+            raise HTTPException(status_code=400, detail="rag_chunks.json が見つかりません")
+
+        # ステータスを更新
+        await db.upsert_rag_index(project_id=project_id, status='indexing')
+
+        # バックグラウンドで構築
+        background_tasks.add_task(
+            _run_rag_build,
+            project_id,
+            project['path']
+        )
+
+        return {
+            "status": "accepted",
+            "message": "RAGインデックス構築を開始しました"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error starting RAG build: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/projects/{project_id}/rag-index")
+async def delete_rag_index(project_id: int):
+    """RAGインデックス削除"""
+    try:
+        db = await get_database()
+        project = await db.get_project(project_id)
+
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        # DBからRAGインデックスを削除
+        await db.delete_rag_index(project_id)
+
+        # rag_index.json ファイルも削除
+        index_path = Path(project['path']) / "rag_index.json"
+        if index_path.exists():
+            index_path.unlink()
+
+        return {"status": "deleted", "message": "RAGインデックスを削除しました"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting RAG index: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _run_rag_build(project_id: int, project_path: str):
+    """バックグラウンドRAGインデックス構築"""
+    from .rag_service import get_rag_builder
+
+    db = await get_database()
+    ws = get_connection_manager()
+
+    try:
+        builder = get_rag_builder()
+
+        async def progress_callback(current, total, message):
+            await ws.broadcast(
+                "rag_build_progress",
+                {
+                    "project_id": project_id,
+                    "current": current,
+                    "total": total,
+                    "message": message
+                }
+            )
+
+        result = await builder.build_index(project_path, progress_callback)
+
+        if result["success"]:
+            await db.upsert_rag_index(
+                project_id=project_id,
+                status='indexed',
+                chunk_count=result["chunk_count"]
+            )
+            await ws.broadcast(
+                "rag_build_progress",
+                {
+                    "project_id": project_id,
+                    "current": result["chunk_count"],
+                    "total": result["chunk_count"],
+                    "message": "構築完了",
+                    "completed": True
+                }
+            )
+        else:
+            await db.update_rag_index_status(
+                project_id=project_id,
+                status='failed',
+                error_message=result["error"]
+            )
+            await ws.broadcast(
+                "rag_build_progress",
+                {
+                    "project_id": project_id,
+                    "error": result["error"],
+                    "completed": True
+                }
+            )
+    except Exception as e:
+        logger.error(f"RAG build error: {e}")
+        await db.update_rag_index_status(
+            project_id=project_id,
+            status='failed',
+            error_message=str(e)
+        )
+
+
 # ========== ヘルスチェック ==========
 
 @router.get("/health")
