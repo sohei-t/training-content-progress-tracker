@@ -6,7 +6,7 @@
 import aiosqlite
 import asyncio
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from contextlib import asynccontextmanager
 import logging
 
@@ -165,6 +165,7 @@ class Database:
                     txt_hash TEXT,
                     mp3_hash TEXT,
                     ssml_hash TEXT,
+                    mp3_duration_ms INTEGER DEFAULT 0,
                     updated_at TEXT DEFAULT (datetime('now')),
                     UNIQUE(project_id, base_name, subfolder)
                 )
@@ -256,6 +257,13 @@ class Database:
                 """)
                 logger.info("Migrated publication_status to publication_status_id")
 
+        # mp3_total_duration_ms カラムが存在しない場合は追加
+        if 'mp3_total_duration_ms' not in columns:
+            await self._connection.execute(
+                "ALTER TABLE projects ADD COLUMN mp3_total_duration_ms INTEGER DEFAULT 0"
+            )
+            logger.info("Added mp3_total_duration_ms column to projects table")
+
         # topicsテーブルのマイグレーション（UNIQUE制約の変更を含む）
         await self._migrate_topics_table()
 
@@ -318,6 +326,15 @@ class Database:
             await self._connection.execute("ALTER TABLE topics_new RENAME TO topics")
 
             logger.info("Topics table migration completed")
+
+        # mp3_duration_ms カラムが存在しない場合は追加
+        cursor = await self._connection.execute("PRAGMA table_info(topics)")
+        topic_cols = [row[1] for row in await cursor.fetchall()]
+        if 'mp3_duration_ms' not in topic_cols:
+            await self._connection.execute(
+                "ALTER TABLE topics ADD COLUMN mp3_duration_ms INTEGER DEFAULT 0"
+            )
+            logger.info("Added mp3_duration_ms column to topics table")
 
     # ========== 納品先マスター操作 ==========
 
@@ -557,7 +574,8 @@ class Database:
         completed_topics: int,
         html_count: int,
         txt_count: int,
-        mp3_count: int
+        mp3_count: int,
+        mp3_total_duration_ms: int = 0
     ) -> None:
         """プロジェクト統計を更新"""
         async with self._lock:
@@ -568,10 +586,11 @@ class Database:
                     html_count = ?,
                     txt_count = ?,
                     mp3_count = ?,
+                    mp3_total_duration_ms = ?,
                     last_scanned_at = datetime('now'),
                     updated_at = datetime('now')
                 WHERE id = ?
-            """, (total_topics, completed_topics, html_count, txt_count, mp3_count, project_id))
+            """, (total_topics, completed_topics, html_count, txt_count, mp3_count, mp3_total_duration_ms, project_id))
 
     async def update_project_settings(
         self,
@@ -615,7 +634,7 @@ class Database:
         cursor = await self._connection.execute("""
             SELECT * FROM topics
             WHERE project_id = ?
-            ORDER BY base_name
+            ORDER BY subfolder, base_name
         """, (project_id,))
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
@@ -635,16 +654,18 @@ class Database:
         html_hash: Optional[str] = None,
         txt_hash: Optional[str] = None,
         mp3_hash: Optional[str] = None,
-        ssml_hash: Optional[str] = None
+        ssml_hash: Optional[str] = None,
+        mp3_duration_ms: int = 0
     ) -> int:
         """トピックをUPSERT"""
         async with self._lock:
             cursor = await self._connection.execute("""
                 INSERT INTO topics (
                     project_id, base_name, topic_id, chapter, title, subfolder,
-                    has_html, has_txt, has_mp3, has_ssml, html_hash, txt_hash, mp3_hash, ssml_hash
+                    has_html, has_txt, has_mp3, has_ssml, html_hash, txt_hash, mp3_hash, ssml_hash,
+                    mp3_duration_ms
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(project_id, base_name, subfolder) DO UPDATE SET
                     topic_id = COALESCE(excluded.topic_id, topic_id),
                     chapter = COALESCE(excluded.chapter, chapter),
@@ -657,12 +678,14 @@ class Database:
                     txt_hash = excluded.txt_hash,
                     mp3_hash = excluded.mp3_hash,
                     ssml_hash = excluded.ssml_hash,
+                    mp3_duration_ms = excluded.mp3_duration_ms,
                     updated_at = datetime('now')
                 RETURNING id
             """, (
                 project_id, base_name, topic_id, chapter, title, subfolder or "",
                 int(has_html), int(has_txt), int(has_mp3), int(has_ssml),
-                html_hash, txt_hash, mp3_hash, ssml_hash
+                html_hash, txt_hash, mp3_hash, ssml_hash,
+                mp3_duration_ms
             ))
             row = await cursor.fetchone()
             return row[0]
@@ -684,6 +707,47 @@ class Database:
             cursor = await self._connection.execute(
                 "DELETE FROM topics WHERE project_id = ?",
                 (project_id,)
+            )
+            return cursor.rowcount
+
+    async def delete_stale_topics(
+        self,
+        project_id: int,
+        active_keys: List[Tuple[str, str]]
+    ) -> int:
+        """ファイルシステムに存在しなくなったトピックを削除
+
+        Args:
+            project_id: プロジェクトID
+            active_keys: 現在検出されたトピックの (base_name, subfolder) ペアリスト
+        Returns:
+            削除された行数
+        """
+        if not active_keys:
+            # トピックが0件なら全削除
+            return await self.delete_topics_by_project(project_id)
+
+        async with self._lock:
+            # 現在のDB内トピックを取得
+            cursor = await self._connection.execute(
+                "SELECT id, base_name, subfolder FROM topics WHERE project_id = ?",
+                (project_id,)
+            )
+            rows = await cursor.fetchall()
+
+            active_set = {(bn, sf) for bn, sf in active_keys}
+            stale_ids = [
+                row['id'] for row in rows
+                if (row['base_name'], row['subfolder'] or '') not in active_set
+            ]
+
+            if not stale_ids:
+                return 0
+
+            placeholders = ','.join('?' * len(stale_ids))
+            cursor = await self._connection.execute(
+                f"DELETE FROM topics WHERE id IN ({placeholders})",
+                stale_ids
             )
             return cursor.rowcount
 
@@ -738,7 +802,8 @@ class Database:
                 COALESCE(SUM(completed_topics), 0) as completed_topics,
                 COALESCE(SUM(html_count), 0) as html_total,
                 COALESCE(SUM(txt_count), 0) as txt_total,
-                COALESCE(SUM(mp3_count), 0) as mp3_total
+                COALESCE(SUM(mp3_count), 0) as mp3_total,
+                COALESCE(SUM(mp3_total_duration_ms), 0) as mp3_total_duration_ms
             FROM projects
         """)
         row = await cursor.fetchone()

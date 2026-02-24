@@ -57,12 +57,19 @@ fi
 # ポート設定（仕様書準拠: 8765）
 PORT=8765
 
-# 既存プロセス確認
-if lsof -Pi :$PORT -sTCP:LISTEN -t >/dev/null 2>&1; then
-    echo "ℹ️  ポート $PORT は既に使用中です"
-    echo "   既存のサーバーにアクセスします..."
-    open "http://localhost:$PORT"
-    exit 0
+# 既存プロセス確認・停止
+EXISTING_PIDS=$(lsof -ti :$PORT 2>/dev/null || true)
+if [ -n "$EXISTING_PIDS" ]; then
+    echo "🔄 ポート $PORT の既存プロセスを停止中..."
+    echo "$EXISTING_PIDS" | xargs kill 2>/dev/null || true
+    sleep 1
+    # まだ残っていれば強制終了
+    REMAINING=$(lsof -ti :$PORT 2>/dev/null || true)
+    if [ -n "$REMAINING" ]; then
+        echo "$REMAINING" | xargs kill -9 2>/dev/null || true
+        sleep 1
+    fi
+    echo "✅ 既存プロセスを停止しました"
 fi
 
 echo ""

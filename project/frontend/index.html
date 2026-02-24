@@ -231,6 +231,10 @@
                                 <p class="text-xs text-gray-500">MP3</p>
                             </div>
                         </div>
+                        <div v-if="stats.mp3TotalDuration > 0" class="mt-3 pt-3 border-t text-center">
+                            <p class="text-lg font-bold text-orange-500">{{ formatDuration(stats.mp3TotalDuration) }}</p>
+                            <p class="text-xs text-gray-500">MP3 合計再生時間</p>
+                        </div>
                     </div>
                 </div>
 
@@ -468,6 +472,9 @@
                                 ]">
                                     MP3: {{ project.mp3_count || 0 }}/{{ project.total_topics }}
                                     <span v-if="project.mp3_count < project.total_topics" class="ml-1">⚠️</span>
+                                </span>
+                                <span v-if="project.mp3_total_duration_ms > 0" class="px-2 py-1 rounded bg-orange-50 text-orange-600">
+                                    {{ formatDuration(project.mp3_total_duration_ms) }}
                                 </span>
                             </div>
                             <!-- 不足ファイル詳細（100%未満の場合のみ表示） -->
