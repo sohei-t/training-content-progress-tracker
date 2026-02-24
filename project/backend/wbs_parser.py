@@ -93,13 +93,15 @@ class ArrayFormatParser:
         return topics
 
     def _scan_content_files(self) -> List[str]:
-        """content/フォルダのHTMLファイルを基準にトピックを特定"""
+        """content/フォルダのHTMLファイルを基準にトピックを特定（index.html除外）"""
         if not self.content_path or not self.content_path.exists():
             return []
 
         files = set()
         for html_file in self.content_path.glob('*.html'):
             base = html_file.stem
+            if base == 'index':
+                continue
             files.add(base)
 
         return sorted(files)
