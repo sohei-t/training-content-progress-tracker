@@ -44,6 +44,11 @@ const app = createApp({
         const publicationStatusFilter = ref('all'); // 'all', 'unset', または publication_status_id
         const checkStatusFilter = ref('all');          // 'all', 'unset', または check_status_id
 
+        // RAG状態
+        const ragStatus = ref(null);  // { has_rag_chunks, rag_index }
+        const isRagBuilding = ref(false);
+        const ragBuildProgress = ref({ current: 0, total: 0, message: '' });
+
         // マスターデータ
         const destinations = ref([]);
         const ttsEngines = ref([]);
@@ -692,9 +697,12 @@ const app = createApp({
             topicFilter.value = 'all';
 
             try {
-                const data = await API.getProjectTopics(project.id);
-                topics.value = data.topics || [];
-                topicSummary.value = data.summary || { completed: 0, in_progress: 0, not_started: 0 };
+                const [topicData] = await Promise.all([
+                    API.getProjectTopics(project.id),
+                    fetchRagStatus(project.id)
+                ]);
+                topics.value = topicData.topics || [];
+                topicSummary.value = topicData.summary || { completed: 0, in_progress: 0, not_started: 0 };
             } catch (error) {
                 console.error('Failed to fetch topics:', error);
                 showToast('トピックの取得に失敗しました', 'error');
@@ -749,6 +757,80 @@ const app = createApp({
             setTimeout(() => {
                 toasts.value = toasts.value.filter(t => t.id !== id);
             }, 3000);
+        }
+
+        // ========== RAGメソッド ==========
+
+        // RAGステータス取得
+        async function fetchRagStatus(projectId) {
+            try {
+                ragStatus.value = await API.getRagStatus(projectId);
+            } catch (error) {
+                console.error('Failed to fetch RAG status:', error);
+                ragStatus.value = null;
+            }
+        }
+
+        // RAGインデックス構築
+        async function buildRagIndex() {
+            if (!selectedProject.value || isRagBuilding.value) return;
+
+            if (!confirm('RAGインデックスを構築しますか？\n\nEmbedding生成にGemini APIを使用します。')) {
+                return;
+            }
+
+            isRagBuilding.value = true;
+            ragBuildProgress.value = { current: 0, total: 0, message: '構築開始...' };
+            showToast('RAGインデックス構築を開始しました...', 'info');
+
+            try {
+                await API.buildRagIndex(selectedProject.value.id);
+            } catch (error) {
+                console.error('Failed to start RAG build:', error);
+                showToast('RAG構築の開始に失敗しました', 'error');
+                isRagBuilding.value = false;
+            }
+        }
+
+        // RAGインデックス削除
+        async function deleteRagIndex() {
+            if (!selectedProject.value) return;
+
+            if (!confirm('RAGインデックスを削除しますか？\n\n再構築が必要になります。')) {
+                return;
+            }
+
+            try {
+                await API.deleteRagIndex(selectedProject.value.id);
+                showToast('RAGインデックスを削除しました', 'success');
+                await fetchRagStatus(selectedProject.value.id);
+            } catch (error) {
+                console.error('Failed to delete RAG index:', error);
+                showToast('RAGインデックスの削除に失敗しました', 'error');
+            }
+        }
+
+        // RAGステータスのラベル取得
+        function getRagStatusLabel(project) {
+            if (!project) return null;
+            if (!project.has_rag_chunks) return null;
+            const ragIdx = project.rag_status; // DB LEFT JOIN で rag_indexes.status が返る
+            if (!ragIdx || ragIdx === 'none' || ragIdx === 'chunks_ready') return 'chunks準備完了';
+            if (ragIdx === 'indexing') return '構築中...';
+            if (ragIdx === 'indexed') return 'RAG構築済';
+            if (ragIdx === 'failed') return '構築失敗';
+            return ragIdx;
+        }
+
+        // RAGステータスのバッジクラス取得
+        function getRagStatusClass(project) {
+            if (!project || !project.has_rag_chunks) return '';
+            const ragIdx = project.rag_status;
+            if (!ragIdx || ragIdx === 'none' || ragIdx === 'chunks_ready') return 'bg-yellow-100 text-yellow-700';
+            if (ragIdx === 'indexing') return 'bg-blue-100 text-blue-700';
+            if (ragIdx === 'indexed') return 'bg-emerald-100 text-emerald-700';
+            if (ragIdx === 'failed') return 'bg-red-100 text-red-700';
+            return 'bg-gray-100 text-gray-700';
         }
 
         // MP3再生時間フォーマット（ミリ秒 → h:mm:ss or mm:ss）
@@ -849,6 +931,29 @@ const app = createApp({
                     `スキャン完了: ${data.result?.projects_scanned || 0}プロジェクト`,
                     'success'
                 );
+            });
+
+            // RAG構築進捗
+            wsService.on('rag_build_progress', (data) => {
+                if (selectedProject.value && selectedProject.value.id === data.project_id) {
+                    if (data.completed) {
+                        isRagBuilding.value = false;
+                        if (data.error) {
+                            showToast(`RAG構築失敗: ${data.error}`, 'error');
+                        } else {
+                            showToast(`RAG構築完了: ${data.current}チャンク`, 'success');
+                        }
+                        // ステータスを再取得
+                        fetchRagStatus(data.project_id);
+                        fetchProjects();
+                    } else {
+                        ragBuildProgress.value = {
+                            current: data.current || 0,
+                            total: data.total || 0,
+                            message: data.message || ''
+                        };
+                    }
+                }
             });
 
             // 接続開始
@@ -952,6 +1057,16 @@ const app = createApp({
             getPublicationStatusLabel,
             getPublicationStatusClass,
             isPublished,
+
+            // RAG
+            ragStatus,
+            isRagBuilding,
+            ragBuildProgress,
+            fetchRagStatus,
+            buildRagIndex,
+            deleteRagIndex,
+            getRagStatusLabel,
+            getRagStatusClass,
 
             // マスター管理
             addDestination,

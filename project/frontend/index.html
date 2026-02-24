@@ -496,7 +496,7 @@
                                 </span>
                             </div>
 
-                            <!-- 納品先・音声変換・チェック進捗バッジ -->
+                            <!-- 納品先・音声変換・チェック進捗・RAGバッジ -->
                             <div class="mt-3 flex gap-2 text-xs flex-wrap">
                                 <span v-if="project.destination_name" class="px-2 py-1 bg-purple-100 text-purple-700 rounded">
                                     📦 {{ project.destination_name }}
@@ -506,6 +506,9 @@
                                 </span>
                                 <span v-if="project.check_status_name" class="px-2 py-1 bg-teal-100 text-teal-700 rounded">
                                     ✔ {{ project.check_status_name }}
+                                </span>
+                                <span v-if="getRagStatusLabel(project)" :class="['px-2 py-1 rounded', getRagStatusClass(project)]">
+                                    🤖 {{ getRagStatusLabel(project) }}
                                 </span>
                             </div>
                             <!-- 備考 -->
@@ -829,6 +832,66 @@
                                 不足一覧を表示
                             </button>
                         </div>
+                    </div>
+                </div>
+
+                <!-- RAGインデックス管理 -->
+                <div v-if="ragStatus" class="mt-4 p-4 bg-gray-50 rounded-lg border">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm font-medium text-gray-700">🤖 RAGチャットボット</span>
+                            <span v-if="ragStatus.has_rag_chunks && !ragStatus.rag_index" class="px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs">
+                                チャンク準備完了
+                            </span>
+                            <span v-else-if="ragStatus.rag_index && ragStatus.rag_index.status === 'indexed'" class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-xs">
+                                構築済 ({{ ragStatus.rag_index.chunk_count }}チャンク)
+                            </span>
+                            <span v-else-if="ragStatus.rag_index && ragStatus.rag_index.status === 'indexing'" class="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
+                                構築中...
+                            </span>
+                            <span v-else-if="ragStatus.rag_index && ragStatus.rag_index.status === 'failed'" class="px-2 py-0.5 bg-red-100 text-red-700 rounded text-xs">
+                                構築失敗
+                            </span>
+                            <span v-else-if="!ragStatus.has_rag_chunks" class="px-2 py-0.5 bg-gray-100 text-gray-500 rounded text-xs">
+                                rag_chunks.json なし
+                            </span>
+                        </div>
+                        <div class="flex gap-2">
+                            <button
+                                v-if="ragStatus.has_rag_chunks && (!ragStatus.rag_index || ragStatus.rag_index.status !== 'indexing')"
+                                @click="buildRagIndex"
+                                :disabled="isRagBuilding"
+                                class="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white rounded text-xs transition-colors"
+                            >
+                                <span v-if="isRagBuilding" class="loading-spinner w-3 h-3 border-2"></span>
+                                <span v-else>🔨</span>
+                                {{ isRagBuilding ? '構築中...' : (ragStatus.rag_index && ragStatus.rag_index.status === 'indexed' ? '再構築' : 'RAG構築') }}
+                            </button>
+                            <button
+                                v-if="ragStatus.rag_index && ragStatus.rag_index.status === 'indexed'"
+                                @click="deleteRagIndex"
+                                class="flex items-center gap-1 px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded text-xs transition-colors"
+                            >
+                                🗑 削除
+                            </button>
+                        </div>
+                    </div>
+                    <!-- RAG構築進捗バー -->
+                    <div v-if="isRagBuilding && ragBuildProgress.total > 0" class="mt-3">
+                        <div class="flex items-center gap-2 text-xs text-emerald-600">
+                            <div class="flex-1 h-1.5 bg-emerald-100 rounded-full overflow-hidden">
+                                <div
+                                    class="h-full bg-emerald-500 transition-all"
+                                    :style="{ width: (ragBuildProgress.current / ragBuildProgress.total * 100) + '%' }"
+                                ></div>
+                            </div>
+                            <span>{{ ragBuildProgress.current }}/{{ ragBuildProgress.total }}</span>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">{{ ragBuildProgress.message }}</p>
+                    </div>
+                    <!-- エラーメッセージ -->
+                    <div v-if="ragStatus.rag_index && ragStatus.rag_index.status === 'failed' && ragStatus.rag_index.error_message" class="mt-2 text-xs text-red-600">
+                        エラー: {{ ragStatus.rag_index.error_message }}
                     </div>
                 </div>
 
