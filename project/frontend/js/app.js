@@ -19,7 +19,8 @@ const app = createApp({
             overallProgress: 0,
             htmlTotal: 0,
             txtTotal: 0,
-            mp3Total: 0
+            mp3Total: 0,
+            mp3TotalDuration: 0
         });
 
         const currentView = ref('dashboard');
@@ -497,7 +498,8 @@ const app = createApp({
                 overallProgress: calculateOverallProgress(p),
                 htmlTotal: p.reduce((sum, proj) => sum + (proj.html_count || 0), 0),
                 txtTotal: p.reduce((sum, proj) => sum + (proj.txt_count || 0), 0),
-                mp3Total: p.reduce((sum, proj) => sum + (proj.mp3_count || 0), 0)
+                mp3Total: p.reduce((sum, proj) => sum + (proj.mp3_count || 0), 0),
+                mp3TotalDuration: p.reduce((sum, proj) => sum + (proj.mp3_total_duration_ms || 0), 0)
             };
         }
 
@@ -577,6 +579,19 @@ const app = createApp({
             setTimeout(() => {
                 toasts.value = toasts.value.filter(t => t.id !== id);
             }, 3000);
+        }
+
+        // MP3再生時間フォーマット（ミリ秒 → h:mm:ss or mm:ss）
+        function formatDuration(ms) {
+            if (!ms || ms <= 0) return '-';
+            const totalSec = Math.floor(ms / 1000);
+            const h = Math.floor(totalSec / 3600);
+            const m = Math.floor((totalSec % 3600) / 60);
+            const s = totalSec % 60;
+            if (h > 0) {
+                return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            }
+            return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
         }
 
         // 日時フォーマット
@@ -744,6 +759,7 @@ const app = createApp({
             triggerScan,
             openFolder,
             formatDateTime,
+            formatDuration,
             formatTime,
             getFilterCount,
             toggleFolder,
