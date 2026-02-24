@@ -388,6 +388,16 @@ const API = {
         return await this.delete(`/projects/${projectId}/rag-index`);
     },
 
+    // ========== 公開API ==========
+
+    /**
+     * プロジェクトをVideo Platformに公開
+     */
+    async publishProject(projectId) {
+        this.clearCache();
+        return await this.post(`/projects/${projectId}/publish`);
+    },
+
     // ========== ヘルスチェック ==========
 
     /**
