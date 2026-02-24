@@ -239,9 +239,9 @@
                 </div>
 
                 <!-- フィルター＆表示切り替え -->
-                <div class="bg-white rounded-lg shadow p-4 mb-6">
+                <div class="bg-white rounded-lg shadow p-4 mb-6 space-y-3">
+                    <!-- 1行目: 進捗フィルター + ソート + 表示切替 -->
                     <div class="flex flex-wrap gap-4 items-center justify-between">
-                        <!-- フィルターボタン -->
                         <div class="flex flex-wrap gap-2">
                             <button
                                 @click="projectFilter = 'all'"
@@ -289,41 +289,13 @@
                             </button>
                         </div>
 
-                        <!-- 表示切り替え＆ソート＆フィルター -->
-                        <div class="flex gap-2 items-center flex-wrap">
-                            <!-- 納品先フィルター -->
-                            <select v-model="destinationFilter" class="px-3 py-2 border rounded-lg text-sm">
-                                <option value="all">📦 納品先: 全て</option>
-                                <option v-for="dest in destinations" :key="dest.id" :value="dest.id">
-                                    📦 {{ dest.name }}
-                                </option>
-                            </select>
-
-                            <!-- 音声変換フィルター -->
-                            <select v-model="ttsEngineFilter" class="px-3 py-2 border rounded-lg text-sm">
-                                <option value="all">🔊 音声: 全て</option>
-                                <option v-for="tts in ttsEngines" :key="tts.id" :value="tts.id">
-                                    🔊 {{ tts.name }}
-                                </option>
-                            </select>
-
-                            <!-- 公開状態フィルター -->
-                            <select v-model="publicationStatusFilter" class="px-3 py-2 border rounded-lg text-sm">
-                                <option value="all">📋 公開状態: 全て</option>
-                                <option value="unset">📋 未設定</option>
-                                <option v-for="status in publicationStatuses" :key="status.id" :value="status.id">
-                                    {{ status.name }}
-                                </option>
-                            </select>
-
+                        <div class="flex gap-2 items-center">
                             <select v-model="sortBy" class="px-3 py-2 border rounded-lg text-sm">
                                 <option value="name">名前順</option>
                                 <option value="progress">進捗順</option>
                                 <option value="progress_asc">進捗順（低い順）</option>
                                 <option value="updated">更新順</option>
                             </select>
-
-                            <!-- 表示切り替えボタン -->
                             <div class="flex border rounded-lg overflow-hidden">
                                 <button
                                     @click="viewMode = 'card'"
@@ -353,8 +325,39 @@
                         </div>
                     </div>
 
+                    <!-- 2行目: 属性フィルター -->
+                    <div class="flex flex-wrap gap-2 items-center pt-2 border-t">
+                        <span class="text-xs text-gray-400 mr-1">絞り込み:</span>
+                        <select v-model="destinationFilter" class="px-2 py-1.5 border rounded-lg text-xs">
+                            <option value="all">📦 納品先: 全て</option>
+                            <option v-for="dest in destinations" :key="dest.id" :value="dest.id">
+                                📦 {{ dest.name }}
+                            </option>
+                        </select>
+                        <select v-model="ttsEngineFilter" class="px-2 py-1.5 border rounded-lg text-xs">
+                            <option value="all">🔊 音声: 全て</option>
+                            <option v-for="tts in ttsEngines" :key="tts.id" :value="tts.id">
+                                🔊 {{ tts.name }}
+                            </option>
+                        </select>
+                        <select v-model="publicationStatusFilter" class="px-2 py-1.5 border rounded-lg text-xs">
+                            <option value="all">📋 公開状態: 全て</option>
+                            <option value="unset">📋 未設定</option>
+                            <option v-for="status in publicationStatuses" :key="status.id" :value="status.id">
+                                {{ status.name }}
+                            </option>
+                        </select>
+                        <select v-model="checkStatusFilter" class="px-2 py-1.5 border rounded-lg text-xs">
+                            <option value="all">✔ チェック: 全て</option>
+                            <option value="unset">✔ 未設定</option>
+                            <option v-for="cs in checkStatuses" :key="cs.id" :value="cs.id">
+                                ✔ {{ cs.name }}
+                            </option>
+                        </select>
+                    </div>
+
                     <!-- カスタム範囲フィルター -->
-                    <div v-if="projectFilter === 'custom'" class="mt-4 p-4 bg-gray-50 rounded-lg">
+                    <div v-if="projectFilter === 'custom'" class="p-4 bg-gray-50 rounded-lg">
                         <div class="flex items-center gap-4">
                             <span class="text-sm text-gray-600">進捗範囲:</span>
                             <input
@@ -410,7 +413,9 @@
                         </div>
 
                         <div class="p-6">
-                            <h3 class="text-lg font-semibold text-gray-800 mb-2 truncate pr-12" :title="project.name">
+                            <h3 class="text-lg font-semibold mb-2 truncate pr-12"
+                                :class="isPublished(project) ? 'text-red-600' : 'text-gray-800'"
+                                :title="project.name">
                                 {{ project.name }}
                             </h3>
 
@@ -491,7 +496,7 @@
                                 </span>
                             </div>
 
-                            <!-- 納品先・音声変換バッジ -->
+                            <!-- 納品先・音声変換・チェック進捗バッジ -->
                             <div class="mt-3 flex gap-2 text-xs flex-wrap">
                                 <span v-if="project.destination_name" class="px-2 py-1 bg-purple-100 text-purple-700 rounded">
                                     📦 {{ project.destination_name }}
@@ -499,6 +504,13 @@
                                 <span v-if="project.tts_engine_name" class="px-2 py-1 bg-indigo-100 text-indigo-700 rounded">
                                     🔊 {{ project.tts_engine_name }}
                                 </span>
+                                <span v-if="project.check_status_name" class="px-2 py-1 bg-teal-100 text-teal-700 rounded">
+                                    ✔ {{ project.check_status_name }}
+                                </span>
+                            </div>
+                            <!-- 備考 -->
+                            <div v-if="project.notes" class="mt-2 text-xs text-gray-500 truncate" :title="project.notes">
+                                📝 {{ project.notes }}
                             </div>
                         </div>
 
@@ -515,12 +527,12 @@
                                     📁
                                 </button>
                             </div>
-                            <!-- 設定ドロップダウン -->
-                            <div class="flex flex-wrap gap-2 text-xs" @click.stop>
+                            <!-- 設定ドロップダウン（2列グリッド） -->
+                            <div class="grid grid-cols-2 gap-1.5 text-xs" @click.stop>
                                 <select
                                     :value="project.destination_id || ''"
                                     @change="onDestinationChange(project.id, $event.target.value)"
-                                    class="flex-1 px-2 py-1 border rounded text-xs min-w-0"
+                                    class="px-2 py-1 border rounded text-xs"
                                 >
                                     <option value="">📦 納品先</option>
                                     <option v-for="dest in destinations" :key="dest.id" :value="dest.id">
@@ -530,7 +542,7 @@
                                 <select
                                     :value="project.tts_engine_id || ''"
                                     @change="onTtsEngineChange(project.id, $event.target.value)"
-                                    class="flex-1 px-2 py-1 border rounded text-xs min-w-0"
+                                    class="px-2 py-1 border rounded text-xs"
                                 >
                                     <option value="">🔊 音声</option>
                                     <option v-for="tts in ttsEngines" :key="tts.id" :value="tts.id">
@@ -540,13 +552,32 @@
                                 <select
                                     :value="project.publication_status_id || ''"
                                     @change="onPublicationStatusChange(project.id, $event.target.value)"
-                                    class="flex-1 px-2 py-1 border rounded text-xs min-w-0"
+                                    class="px-2 py-1 border rounded text-xs"
                                 >
                                     <option value="">📋 公開状態</option>
                                     <option v-for="status in publicationStatuses" :key="status.id" :value="status.id">
                                         {{ status.name }}
                                     </option>
                                 </select>
+                                <select
+                                    :value="project.check_status_id || ''"
+                                    @change="onCheckStatusChange(project.id, $event.target.value)"
+                                    class="px-2 py-1 border rounded text-xs"
+                                >
+                                    <option value="">✔ チェック</option>
+                                    <option v-for="cs in checkStatuses" :key="cs.id" :value="cs.id">
+                                        {{ cs.name }}
+                                    </option>
+                                </select>
+                            </div>
+                            <div class="mt-1.5" @click.stop>
+                                <input
+                                    type="text"
+                                    :value="project.notes || ''"
+                                    @input="onNotesChange(project.id, $event.target.value)"
+                                    placeholder="📝 備考"
+                                    class="w-full px-2 py-1 border rounded text-xs"
+                                >
                             </div>
                         </div>
                     </div>
@@ -554,120 +585,138 @@
 
                 <!-- リスト表示 -->
                 <div v-else class="bg-white rounded-lg shadow overflow-hidden overflow-x-auto">
-                    <!-- リストヘッダー -->
-                    <div class="grid grid-cols-16 gap-2 px-4 py-3 bg-gray-50 border-b text-sm font-medium text-gray-500 min-w-[1100px]">
-                        <div class="col-span-2">プロジェクト名</div>
-                        <div class="col-span-2 text-center">進捗</div>
-                        <div class="col-span-1 text-center">HTML</div>
-                        <div class="col-span-1 text-center">TXT</div>
-                        <div class="col-span-1 text-center">MP3</div>
-                        <div class="col-span-2 text-center">納品先</div>
-                        <div class="col-span-2 text-center">音声変換</div>
-                        <div class="col-span-2 text-center">公開状態</div>
-                        <div class="col-span-2 text-center">トピック</div>
-                        <div class="col-span-1 text-center">状態</div>
-                    </div>
-
-                    <!-- リストアイテム -->
-                    <div
-                        v-for="project in sortedFilteredProjects"
-                        :key="project.id"
-                        @click="selectProject(project)"
-                        class="grid grid-cols-16 gap-2 px-4 py-3 border-b hover:bg-blue-50 cursor-pointer transition-colors list-item-hover min-w-[1100px]"
-                    >
-                        <div class="col-span-2 flex items-center gap-2">
-                            <span class="font-medium text-gray-800 truncate" :title="project.name">
-                                {{ project.name }}
-                            </span>
-                        </div>
-                        <div class="col-span-2">
-                            <div class="flex items-center gap-2">
-                                <div class="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
-                                    <div
-                                        :class="[
-                                            'h-full transition-all',
-                                            project.progress >= 100 ? 'bg-green-500' : 'bg-blue-500'
-                                        ]"
-                                        :style="{ width: project.progress + '%' }"
-                                    ></div>
-                                </div>
-                                <span :class="[
-                                    'text-sm font-bold w-12 text-right',
-                                    project.progress >= 100 ? 'text-green-600' : 'text-blue-600'
-                                ]">
-                                    {{ project.progress.toFixed(1) }}%
-                                </span>
-                            </div>
-                        </div>
-                        <div class="col-span-1 text-center">
-                            <span :class="[
-                                'text-sm',
-                                project.html_count >= project.total_topics ? 'text-green-600' : 'text-red-600 font-bold'
-                            ]">
-                                {{ project.html_count }}<span v-if="project.html_count < project.total_topics">⚠️</span>
-                            </span>
-                        </div>
-                        <div class="col-span-1 text-center">
-                            <span :class="[
-                                'text-sm',
-                                project.txt_count >= project.total_topics ? 'text-blue-600' : 'text-red-600 font-bold'
-                            ]">
-                                {{ project.txt_count }}<span v-if="project.txt_count < project.total_topics">⚠️</span>
-                            </span>
-                        </div>
-                        <div class="col-span-1 text-center">
-                            <span :class="[
-                                'text-sm',
-                                project.mp3_count >= project.total_topics ? 'text-orange-500' : 'text-red-600 font-bold'
-                            ]">
-                                {{ project.mp3_count }}<span v-if="project.mp3_count < project.total_topics">⚠️</span>
-                            </span>
-                        </div>
-                        <div class="col-span-2 text-center" @click.stop>
-                            <select
-                                :value="project.destination_id || ''"
-                                @change="onDestinationChange(project.id, $event.target.value)"
-                                class="w-full px-2 py-1 border rounded text-xs"
+                    <table class="w-full text-sm min-w-[1100px]">
+                        <thead>
+                            <tr class="bg-gray-50 border-b text-gray-500 font-medium">
+                                <th class="text-left px-4 py-3 w-[18%]">プロジェクト名</th>
+                                <th class="text-center px-2 py-3 w-[14%]">進捗</th>
+                                <th class="text-center px-2 py-3 w-[8%]">ファイル</th>
+                                <th class="text-center px-1 py-3 w-[10%]">納品先</th>
+                                <th class="text-center px-1 py-3 w-[10%]">音声変換</th>
+                                <th class="text-center px-1 py-3 w-[10%]">公開状態</th>
+                                <th class="text-center px-1 py-3 w-[8%]">チェック</th>
+                                <th class="text-center px-1 py-3 w-[14%]">備考</th>
+                                <th class="text-center px-2 py-3 w-[5%]">トピック</th>
+                                <th class="text-center px-1 py-3 w-[3%]"></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr
+                                v-for="project in sortedFilteredProjects"
+                                :key="project.id"
+                                @click="selectProject(project)"
+                                class="border-b hover:bg-blue-50 cursor-pointer transition-colors list-item-hover"
                             >
-                                <option value="">-</option>
-                                <option v-for="dest in destinations" :key="dest.id" :value="dest.id">
-                                    {{ dest.name }}
-                                </option>
-                            </select>
-                        </div>
-                        <div class="col-span-2 text-center" @click.stop>
-                            <select
-                                :value="project.tts_engine_id || ''"
-                                @change="onTtsEngineChange(project.id, $event.target.value)"
-                                class="w-full px-2 py-1 border rounded text-xs"
-                            >
-                                <option value="">-</option>
-                                <option v-for="tts in ttsEngines" :key="tts.id" :value="tts.id">
-                                    {{ tts.name }}
-                                </option>
-                            </select>
-                        </div>
-                        <div class="col-span-2 text-center" @click.stop>
-                            <select
-                                :value="project.publication_status_id || ''"
-                                @change="onPublicationStatusChange(project.id, $event.target.value)"
-                                class="w-full px-2 py-1 border rounded text-xs"
-                            >
-                                <option value="">-</option>
-                                <option v-for="status in publicationStatuses" :key="status.id" :value="status.id">
-                                    {{ status.name }}
-                                </option>
-                            </select>
-                        </div>
-                        <div class="col-span-2 text-center text-sm text-gray-600">
-                            {{ project.completed_topics }} / {{ project.total_topics }}
-                        </div>
-                        <div class="col-span-1 text-center">
-                            <span v-if="project.progress >= 100" class="text-2xl" title="完了">🏆</span>
-                            <span v-else-if="project.progress > 0" class="text-lg" title="進行中">🔄</span>
-                            <span v-else class="text-lg text-gray-400" title="未着手">○</span>
-                        </div>
-                    </div>
+                                <td class="px-4 py-2.5">
+                                    <span class="font-medium truncate block"
+                                        :class="isPublished(project) ? 'text-red-600' : 'text-gray-800'"
+                                        :title="project.name">
+                                        {{ project.name }}
+                                    </span>
+                                </td>
+                                <td class="px-2 py-2.5">
+                                    <div class="flex items-center gap-1.5">
+                                        <div class="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                            <div
+                                                :class="[
+                                                    'h-full transition-all',
+                                                    project.progress >= 100 ? 'bg-green-500' : 'bg-blue-500'
+                                                ]"
+                                                :style="{ width: Math.min(project.progress, 100) + '%' }"
+                                            ></div>
+                                        </div>
+                                        <span :class="[
+                                            'text-xs font-bold w-10 text-right whitespace-nowrap',
+                                            project.progress >= 100 ? 'text-green-600' : 'text-blue-600'
+                                        ]">
+                                            {{ project.progress.toFixed(1) }}%
+                                        </span>
+                                    </div>
+                                </td>
+                                <td class="px-2 py-2.5 text-center">
+                                    <div class="flex justify-center gap-1 text-xs">
+                                        <span :class="project.html_count >= project.total_topics ? 'text-green-600' : 'text-red-500 font-bold'" title="HTML">
+                                            H:{{ project.html_count }}
+                                        </span>
+                                        <span :class="project.txt_count >= project.total_topics ? 'text-blue-600' : 'text-red-500 font-bold'" title="TXT">
+                                            T:{{ project.txt_count }}
+                                        </span>
+                                        <span :class="project.mp3_count >= project.total_topics ? 'text-orange-500' : 'text-red-500 font-bold'" title="MP3">
+                                            M:{{ project.mp3_count }}
+                                        </span>
+                                        <span v-if="project.mp3_total_duration_ms > 0" class="text-orange-400" title="再生時間">
+                                            {{ formatDuration(project.mp3_total_duration_ms) }}
+                                        </span>
+                                    </div>
+                                </td>
+                                <td class="px-1 py-2.5" @click.stop>
+                                    <select
+                                        :value="project.destination_id || ''"
+                                        @change="onDestinationChange(project.id, $event.target.value)"
+                                        class="w-full px-1 py-1 border rounded text-xs"
+                                    >
+                                        <option value="">-</option>
+                                        <option v-for="dest in destinations" :key="dest.id" :value="dest.id">
+                                            {{ dest.name }}
+                                        </option>
+                                    </select>
+                                </td>
+                                <td class="px-1 py-2.5" @click.stop>
+                                    <select
+                                        :value="project.tts_engine_id || ''"
+                                        @change="onTtsEngineChange(project.id, $event.target.value)"
+                                        class="w-full px-1 py-1 border rounded text-xs"
+                                    >
+                                        <option value="">-</option>
+                                        <option v-for="tts in ttsEngines" :key="tts.id" :value="tts.id">
+                                            {{ tts.name }}
+                                        </option>
+                                    </select>
+                                </td>
+                                <td class="px-1 py-2.5" @click.stop>
+                                    <select
+                                        :value="project.publication_status_id || ''"
+                                        @change="onPublicationStatusChange(project.id, $event.target.value)"
+                                        class="w-full px-1 py-1 border rounded text-xs"
+                                    >
+                                        <option value="">-</option>
+                                        <option v-for="status in publicationStatuses" :key="status.id" :value="status.id">
+                                            {{ status.name }}
+                                        </option>
+                                    </select>
+                                </td>
+                                <td class="px-1 py-2.5" @click.stop>
+                                    <select
+                                        :value="project.check_status_id || ''"
+                                        @change="onCheckStatusChange(project.id, $event.target.value)"
+                                        class="w-full px-1 py-1 border rounded text-xs"
+                                    >
+                                        <option value="">-</option>
+                                        <option v-for="cs in checkStatuses" :key="cs.id" :value="cs.id">
+                                            {{ cs.name }}
+                                        </option>
+                                    </select>
+                                </td>
+                                <td class="px-1 py-2.5" @click.stop>
+                                    <input
+                                        type="text"
+                                        :value="project.notes || ''"
+                                        @input="onNotesChange(project.id, $event.target.value)"
+                                        placeholder="備考"
+                                        class="w-full px-1 py-1 border rounded text-xs"
+                                    >
+                                </td>
+                                <td class="px-2 py-2.5 text-center text-xs text-gray-600 whitespace-nowrap">
+                                    {{ project.completed_topics }}/{{ project.total_topics }}
+                                </td>
+                                <td class="px-1 py-2.5 text-center">
+                                    <span v-if="project.progress >= 100" class="text-lg" title="完了">🏆</span>
+                                    <span v-else-if="project.progress > 0" class="text-sm" title="進行中">🔄</span>
+                                    <span v-else class="text-sm text-gray-400" title="未着手">○</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
 
                 <!-- 空状態 -->
@@ -1055,6 +1104,17 @@
                     >
                         📋 公開状態マスター
                     </button>
+                    <button
+                        @click="settingsTab = 'check-statuses'"
+                        :class="[
+                            'px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                            settingsTab === 'check-statuses'
+                                ? 'bg-teal-500 text-white'
+                                : 'bg-white text-gray-600 hover:bg-gray-100'
+                        ]"
+                    >
+                        ✔ チェック進捗マスター
+                    </button>
                 </div>
 
                 <!-- 納品先マスター -->
@@ -1068,13 +1128,15 @@
                     </div>
 
                     <!-- 一覧 -->
-                    <div class="divide-y">
+                    <div class="divide-y" ref="destinationListRef">
                         <div
                             v-for="(dest, index) in destinations"
                             :key="dest.id"
+                            :data-id="dest.id"
                             class="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
                         >
                             <div class="flex items-center gap-4">
+                                <span class="drag-handle cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 select-none" title="ドラッグで並べ替え">&#x2807;</span>
                                 <span class="text-gray-400 text-sm w-6">{{ index + 1 }}.</span>
                                 <!-- 編集モード -->
                                 <div v-if="editingItem && editingItem.id === dest.id">
@@ -1156,13 +1218,15 @@
                     </div>
 
                     <!-- 一覧 -->
-                    <div class="divide-y">
+                    <div class="divide-y" ref="ttsEngineListRef">
                         <div
                             v-for="(tts, index) in ttsEngines"
                             :key="tts.id"
+                            :data-id="tts.id"
                             class="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
                         >
                             <div class="flex items-center gap-4">
+                                <span class="drag-handle cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 select-none" title="ドラッグで並べ替え">&#x2807;</span>
                                 <span class="text-gray-400 text-sm w-6">{{ index + 1 }}.</span>
                                 <!-- 編集モード -->
                                 <div v-if="editingItem && editingItem.id === tts.id">
@@ -1244,14 +1308,16 @@
                     </div>
 
                     <!-- 一覧 -->
-                    <div class="divide-y">
+                    <div class="divide-y" ref="publicationStatusListRef">
                         <div
-                            v-for="status in publicationStatuses"
+                            v-for="(status, index) in publicationStatuses"
                             :key="status.id"
+                            :data-id="status.id"
                             class="flex items-center justify-between p-4 hover:bg-gray-50"
                         >
                             <div class="flex items-center gap-3">
-                                <span class="text-gray-400 text-sm">{{ status.display_order || '-' }}</span>
+                                <span class="drag-handle cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 select-none" title="ドラッグで並べ替え">&#x2807;</span>
+                                <span class="text-gray-400 text-sm">{{ index + 1 }}.</span>
                                 <template v-if="editingItem && editingItem.id === status.id">
                                     <input
                                         v-model="editingItem.name"
@@ -1320,6 +1386,96 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- チェック進捗マスター -->
+                <div v-else-if="settingsTab === 'check-statuses'" class="bg-white rounded-lg shadow">
+                    <div class="p-6 border-b">
+                        <h3 class="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                            ✔ チェック進捗マスター
+                            <span class="text-sm font-normal text-gray-500">({{ checkStatuses.length }}件)</span>
+                        </h3>
+                        <p class="text-sm text-gray-500 mt-1">プロジェクトのチェック進捗状態を管理します</p>
+                    </div>
+
+                    <!-- 一覧 -->
+                    <div class="divide-y" ref="checkStatusListRef">
+                        <div
+                            v-for="(cs, index) in checkStatuses"
+                            :key="cs.id"
+                            :data-id="cs.id"
+                            class="flex items-center justify-between px-6 py-4 hover:bg-gray-50"
+                        >
+                            <div class="flex items-center gap-4">
+                                <span class="drag-handle cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 select-none" title="ドラッグで並べ替え">&#x2807;</span>
+                                <span class="text-gray-400 text-sm w-6">{{ index + 1 }}.</span>
+                                <!-- 編集モード -->
+                                <div v-if="editingItem && editingItem.id === cs.id">
+                                    <input
+                                        v-model="editingItem.name"
+                                        type="text"
+                                        class="px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                                        @keyup.enter="saveEditing"
+                                        @keyup.esc="cancelEditing"
+                                    >
+                                </div>
+                                <!-- 表示モード -->
+                                <span v-else class="text-gray-800 font-medium">{{ cs.name }}</span>
+                            </div>
+                            <div class="flex gap-2">
+                                <template v-if="editingItem && editingItem.id === cs.id">
+                                    <button
+                                        @click="saveEditing"
+                                        class="px-3 py-1 bg-green-500 text-white text-sm rounded hover:bg-green-600"
+                                    >
+                                        保存
+                                    </button>
+                                    <button
+                                        @click="cancelEditing"
+                                        class="px-3 py-1 bg-gray-300 text-gray-700 text-sm rounded hover:bg-gray-400"
+                                    >
+                                        キャンセル
+                                    </button>
+                                </template>
+                                <template v-else>
+                                    <button
+                                        @click="startEditing(cs)"
+                                        class="px-3 py-1 bg-gray-100 text-gray-600 text-sm rounded hover:bg-gray-200"
+                                        title="編集"
+                                    >
+                                        ✏️
+                                    </button>
+                                    <button
+                                        @click="deleteCheckStatus(cs.id)"
+                                        class="px-3 py-1 bg-red-100 text-red-600 text-sm rounded hover:bg-red-200"
+                                        title="削除"
+                                    >
+                                        🗑️
+                                    </button>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 新規追加 -->
+                    <div class="p-6 border-t bg-gray-50">
+                        <div class="flex gap-2">
+                            <input
+                                v-model="newItemName"
+                                type="text"
+                                placeholder="新しいチェック進捗の名前"
+                                class="flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                                @keyup.enter="addCheckStatus"
+                            >
+                            <button
+                                @click="addCheckStatus"
+                                :disabled="!newItemName.trim()"
+                                class="px-4 py-2 bg-teal-500 text-white rounded-lg text-sm hover:bg-teal-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                            >
+                                ＋ 追加
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </main>
 
@@ -1339,6 +1495,9 @@
             </div>
         </div>
     </div>
+
+    <!-- SortableJS (CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.6/Sortable.min.js"></script>
 
     <!-- Vue.js 3 (CDN) -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>

@@ -123,6 +123,30 @@ class Database:
                 INSERT OR IGNORE INTO publication_statuses (name, display_order) VALUES ('💰 有料公開', 3)
             """)
 
+            # check_statuses マスターテーブル（チェック進捗）
+            await self._connection.execute("""
+                CREATE TABLE IF NOT EXISTS check_statuses (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    display_order INTEGER DEFAULT 0,
+                    created_at TEXT DEFAULT (datetime('now'))
+                )
+            """)
+
+            # チェック進捗の初期データ
+            await self._connection.execute("""
+                INSERT OR IGNORE INTO check_statuses (name, display_order) VALUES ('完了', 1)
+            """)
+            await self._connection.execute("""
+                INSERT OR IGNORE INTO check_statuses (name, display_order) VALUES ('チェック中', 2)
+            """)
+            await self._connection.execute("""
+                INSERT OR IGNORE INTO check_statuses (name, display_order) VALUES ('未チェック', 3)
+            """)
+            await self._connection.execute("""
+                INSERT OR IGNORE INTO check_statuses (name, display_order) VALUES ('修正中', 4)
+            """)
+
             # projects テーブル
             await self._connection.execute("""
                 CREATE TABLE IF NOT EXISTS projects (
@@ -138,6 +162,8 @@ class Database:
                     destination_id INTEGER REFERENCES destinations(id),
                     tts_engine_id INTEGER REFERENCES tts_engines(id),
                     publication_status_id INTEGER REFERENCES publication_statuses(id),
+                    check_status_id INTEGER REFERENCES check_statuses(id),
+                    notes TEXT,
                     last_scanned_at TEXT,
                     created_at TEXT DEFAULT (datetime('now')),
                     updated_at TEXT DEFAULT (datetime('now'))
@@ -256,6 +282,20 @@ class Database:
                     ) WHERE publication_status = 'paid'
                 """)
                 logger.info("Migrated publication_status to publication_status_id")
+
+        # check_status_id カラムが存在しない場合は追加
+        if 'check_status_id' not in columns:
+            await self._connection.execute(
+                "ALTER TABLE projects ADD COLUMN check_status_id INTEGER REFERENCES check_statuses(id)"
+            )
+            logger.info("Added check_status_id column to projects table")
+
+        # notes カラムが存在しない場合は追加
+        if 'notes' not in columns:
+            await self._connection.execute(
+                "ALTER TABLE projects ADD COLUMN notes TEXT"
+            )
+            logger.info("Added notes column to projects table")
 
         # mp3_total_duration_ms カラムが存在しない場合は追加
         if 'mp3_total_duration_ms' not in columns:
@@ -507,37 +547,121 @@ class Database:
             )
             return True
 
+    # ========== チェック進捗マスター操作 ==========
+
+    async def get_all_check_statuses(self) -> List[Dict[str, Any]]:
+        """全チェック進捗取得"""
+        cursor = await self._connection.execute(
+            "SELECT * FROM check_statuses ORDER BY display_order, id"
+        )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    async def get_check_status(self, check_status_id: int) -> Optional[Dict[str, Any]]:
+        """チェック進捗単体取得"""
+        cursor = await self._connection.execute(
+            "SELECT * FROM check_statuses WHERE id = ?",
+            (check_status_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+    async def create_check_status(self, name: str, display_order: int = 0) -> int:
+        """チェック進捗作成"""
+        async with self._lock:
+            cursor = await self._connection.execute("""
+                INSERT INTO check_statuses (name, display_order)
+                VALUES (?, ?)
+                RETURNING id
+            """, (name, display_order))
+            row = await cursor.fetchone()
+            return row[0]
+
+    async def update_check_status(self, check_status_id: int, name: str, display_order: Optional[int] = None) -> bool:
+        """チェック進捗更新"""
+        async with self._lock:
+            if display_order is not None:
+                await self._connection.execute("""
+                    UPDATE check_statuses SET name = ?, display_order = ? WHERE id = ?
+                """, (name, display_order, check_status_id))
+            else:
+                await self._connection.execute("""
+                    UPDATE check_statuses SET name = ? WHERE id = ?
+                """, (name, check_status_id))
+            return True
+
+    async def delete_check_status(self, check_status_id: int) -> bool:
+        """チェック進捗削除"""
+        async with self._lock:
+            # 関連プロジェクトのcheck_status_idをNULLに設定
+            await self._connection.execute(
+                "UPDATE projects SET check_status_id = NULL WHERE check_status_id = ?",
+                (check_status_id,)
+            )
+            await self._connection.execute(
+                "DELETE FROM check_statuses WHERE id = ?",
+                (check_status_id,)
+            )
+            return True
+
+    # ========== マスター一括並べ替え ==========
+
+    async def _reorder_master(self, table: str, ordered_ids: List[int]) -> None:
+        """マスターテーブルの display_order を一括更新"""
+        async with self._lock:
+            for order, item_id in enumerate(ordered_ids):
+                await self._connection.execute(
+                    f"UPDATE {table} SET display_order = ? WHERE id = ?",
+                    (order, item_id)
+                )
+
+    async def reorder_destinations(self, ordered_ids: List[int]) -> None:
+        await self._reorder_master("destinations", ordered_ids)
+
+    async def reorder_tts_engines(self, ordered_ids: List[int]) -> None:
+        await self._reorder_master("tts_engines", ordered_ids)
+
+    async def reorder_publication_statuses(self, ordered_ids: List[int]) -> None:
+        await self._reorder_master("publication_statuses", ordered_ids)
+
+    async def reorder_check_statuses(self, ordered_ids: List[int]) -> None:
+        await self._reorder_master("check_statuses", ordered_ids)
+
     # ========== プロジェクト操作 ==========
 
     async def get_all_projects(self) -> List[Dict[str, Any]]:
-        """全プロジェクト取得（納品先・音声変換エンジン・公開状態名含む）"""
+        """全プロジェクト取得（納品先・音声変換エンジン・公開状態・チェック進捗名含む）"""
         cursor = await self._connection.execute("""
             SELECT
                 p.*,
                 d.name as destination_name,
                 t.name as tts_engine_name,
-                ps.name as publication_status_name
+                ps.name as publication_status_name,
+                cs.name as check_status_name
             FROM projects p
             LEFT JOIN destinations d ON p.destination_id = d.id
             LEFT JOIN tts_engines t ON p.tts_engine_id = t.id
             LEFT JOIN publication_statuses ps ON p.publication_status_id = ps.id
+            LEFT JOIN check_statuses cs ON p.check_status_id = cs.id
             ORDER BY p.name
         """)
         rows = await cursor.fetchall()
         return [dict(row) for row in rows]
 
     async def get_project(self, project_id: int) -> Optional[Dict[str, Any]]:
-        """プロジェクト単体取得（納品先・音声変換エンジン・公開状態名含む）"""
+        """プロジェクト単体取得（納品先・音声変換エンジン・公開状態・チェック進捗名含む）"""
         cursor = await self._connection.execute("""
             SELECT
                 p.*,
                 d.name as destination_name,
                 t.name as tts_engine_name,
-                ps.name as publication_status_name
+                ps.name as publication_status_name,
+                cs.name as check_status_name
             FROM projects p
             LEFT JOIN destinations d ON p.destination_id = d.id
             LEFT JOIN tts_engines t ON p.tts_engine_id = t.id
             LEFT JOIN publication_statuses ps ON p.publication_status_id = ps.id
+            LEFT JOIN check_statuses cs ON p.check_status_id = cs.id
             WHERE p.id = ?
         """, (project_id,))
         row = await cursor.fetchone()
@@ -597,18 +721,22 @@ class Database:
         project_id: int,
         destination_id: Optional[int] = None,
         tts_engine_id: Optional[int] = None,
-        publication_status_id: Optional[int] = None
+        publication_status_id: Optional[int] = None,
+        check_status_id: Optional[int] = None,
+        notes: Optional[str] = None
     ) -> bool:
-        """プロジェクトの設定（納品先・音声変換エンジン・公開状態）を更新"""
+        """プロジェクトの設定（納品先・音声変換エンジン・公開状態・チェック進捗・備考）を更新"""
         async with self._lock:
             await self._connection.execute("""
                 UPDATE projects SET
                     destination_id = ?,
                     tts_engine_id = ?,
                     publication_status_id = ?,
+                    check_status_id = ?,
+                    notes = ?,
                     updated_at = datetime('now')
                 WHERE id = ?
-            """, (destination_id, tts_engine_id, publication_status_id, project_id))
+            """, (destination_id, tts_engine_id, publication_status_id, check_status_id, notes, project_id))
             return True
 
     async def delete_project(self, project_id: int) -> bool:

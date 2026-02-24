@@ -232,6 +232,14 @@ const API = {
         return await this.delete(`/destinations/${id}`);
     },
 
+    /**
+     * 納品先並べ替え
+     */
+    async reorderDestinations(data) {
+        this.clearCache('/destinations');
+        return await this.put('/destinations/reorder', data);
+    },
+
     // ========== 音声変換エンジンマスターAPI ==========
 
     /**
@@ -265,6 +273,14 @@ const API = {
         return await this.delete(`/tts-engines/${id}`);
     },
 
+    /**
+     * 音声変換エンジン並べ替え
+     */
+    async reorderTtsEngines(data) {
+        this.clearCache('/tts-engines');
+        return await this.put('/tts-engines/reorder', data);
+    },
+
     // ========== 公開状態マスターAPI ==========
 
     /**
@@ -296,6 +312,55 @@ const API = {
     async deletePublicationStatus(id) {
         this.clearCache('/publication-statuses');
         return await this.delete(`/publication-statuses/${id}`);
+    },
+
+    /**
+     * 公開状態並べ替え
+     */
+    async reorderPublicationStatuses(data) {
+        this.clearCache('/publication-statuses');
+        return await this.put('/publication-statuses/reorder', data);
+    },
+
+    // ========== チェック進捗マスターAPI ==========
+
+    /**
+     * チェック進捗一覧取得
+     */
+    async getCheckStatuses() {
+        return await this.get('/check-statuses');
+    },
+
+    /**
+     * チェック進捗作成
+     */
+    async createCheckStatus(data) {
+        this.clearCache('/check-statuses');
+        return await this.post('/check-statuses', data);
+    },
+
+    /**
+     * チェック進捗更新
+     */
+    async updateCheckStatus(id, data) {
+        this.clearCache('/check-statuses');
+        return await this.put(`/check-statuses/${id}`, data);
+    },
+
+    /**
+     * チェック進捗削除
+     */
+    async deleteCheckStatus(id) {
+        this.clearCache('/check-statuses');
+        return await this.delete(`/check-statuses/${id}`);
+    },
+
+    /**
+     * チェック進捗並べ替え
+     */
+    async reorderCheckStatuses(data) {
+        this.clearCache('/check-statuses');
+        return await this.put('/check-statuses/reorder', data);
     },
 
     // ========== ヘルスチェック ==========
