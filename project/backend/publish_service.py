@@ -4,6 +4,7 @@ Firebase Firestore + Cloud Run Drive API を使用して
 研修コンテンツを Personal Video Platform に公開する
 """
 
+import os
 import json
 import logging
 import re
@@ -15,6 +16,9 @@ from datetime import datetime
 import httpx
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
+
+from dotenv import load_dotenv
+load_dotenv(os.path.expanduser("~/.config/ai-agents/profiles/default.env"))
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +98,8 @@ def extract_episode_number(base_name: str) -> str | None:
 FIREBASE_SA_KEY_PATH = (
     Path.home() / ".config/ai-agents/credentials/firebase/personal-video-platform-sa.json"
 )
-FIREBASE_API_KEY = "***REMOVED***"
-CLOUD_RUN_URL = "https://pvp-drive-api-153069559514.asia-northeast1.run.app"
+FIREBASE_API_KEY = os.getenv("PVP_FIREBASE_API_KEY", "")
+CLOUD_RUN_URL = os.getenv("PVP_CLOUD_RUN_URL", "https://pvp-drive-api-153069559514.asia-northeast1.run.app")
 SERVICE_UID = "tracker-publish-service"
 
 
