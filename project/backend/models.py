@@ -148,3 +148,31 @@ class WebSocketMessage(BaseModel):
 class ErrorResponse(BaseModel):
     """エラーレスポンス"""
     error: Dict[str, Any]
+
+
+# ========== リクエストバリデーションモデル ==========
+
+class MasterDataCreateRequest(BaseModel):
+    """マスターデータ作成リクエスト"""
+    name: str = Field(..., min_length=1, max_length=100, description="エンティティ名")
+    display_order: int = Field(default=0, description="表示順")
+
+
+class MasterDataUpdateRequest(BaseModel):
+    """マスターデータ更新リクエスト"""
+    name: str = Field(..., min_length=1, max_length=100, description="エンティティ名")
+    display_order: Optional[int] = Field(None, description="表示順")
+
+
+class ReorderRequest(BaseModel):
+    """並べ替えリクエスト"""
+    ordered_ids: List[int] = Field(..., min_length=1, description="並べ替え後のID順序リスト")
+
+
+class ProjectSettingsRequest(BaseModel):
+    """プロジェクト設定更新リクエスト"""
+    destination_id: Optional[int] = Field(None, description="納品先ID")
+    tts_engine_id: Optional[int] = Field(None, description="音声変換エンジンID")
+    publication_status_id: Optional[int] = Field(None, description="公開状態ID")
+    check_status_id: Optional[int] = Field(None, description="チェック進捗ID")
+    notes: Optional[str] = Field(None, description="備考")

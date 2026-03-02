@@ -1,6 +1,9 @@
 """
 REST APIルーター
 パフォーマンス最適化: 非同期処理、レスポンスキャッシュ、軽量バリデーション
+
+Service layer を活用してビジネスロジックをハンドラから分離。
+マスターデータCRUDは MasterDataService で汎用化。
 """
 
 from datetime import datetime
@@ -21,8 +24,13 @@ from .models import (
     ScanRequest,
     ScanResponse,
     StatsResponse,
-    ErrorResponse
+    ErrorResponse,
+    MasterDataCreateRequest,
+    MasterDataUpdateRequest,
+    ReorderRequest,
+    ProjectSettingsRequest,
 )
+from .services import ProgressCalculator, MasterDataService
 from .publish_service import get_publish_service
 
 import logging
@@ -35,6 +43,22 @@ router = APIRouter(prefix="/api", tags=["API"])
 DEFAULT_CONTENT_PATH = Path("/Users/sohei/Desktop/Learning-Curricula")
 
 
+# ========== ヘルパー関数 ==========
+
+async def _get_master_service(entity_type: str, entity_type_plural: str) -> MasterDataService:
+    """Create a MasterDataService instance with the current database.
+
+    Args:
+        entity_type: Singular entity name (e.g., 'destination').
+        entity_type_plural: Plural entity name (e.g., 'destinations').
+
+    Returns:
+        Configured MasterDataService instance.
+    """
+    db = await get_database()
+    return MasterDataService(db, entity_type, entity_type_plural)
+
+
 # ========== プロジェクトAPI ==========
 
 @router.get("/projects", response_model=ProjectListResponse)
@@ -45,31 +69,7 @@ async def get_projects():
         projects = await db.get_all_projects()
 
         # 進捗率を計算して追加
-        result = []
-        for p in projects:
-            project_data = dict(p)
-            total = project_data.get('total_topics', 0)
-
-            if total > 0:
-                # 重み付け進捗率
-                progress = (
-                    (project_data.get('html_count', 0) * 0.4) +
-                    (project_data.get('txt_count', 0) * 0.3) +
-                    (project_data.get('mp3_count', 0) * 0.3)
-                ) / total * 100
-                project_data['progress'] = round(progress, 1)
-
-                # 詳細進捗
-                project_data['progress_detail'] = {
-                    'html': round(project_data.get('html_count', 0) / total * 100, 1),
-                    'txt': round(project_data.get('txt_count', 0) / total * 100, 1),
-                    'mp3': round(project_data.get('mp3_count', 0) / total * 100, 1)
-                }
-            else:
-                project_data['progress'] = 0
-                project_data['progress_detail'] = {'html': 0, 'txt': 0, 'mp3': 0}
-
-            result.append(project_data)
+        result = [ProgressCalculator.enrich_project_data(p) for p in projects]
 
         # 最終更新日時を取得
         last_updated = None
@@ -99,20 +99,7 @@ async def get_project(project_id: int):
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
 
-        project_data = dict(project)
-        total = project_data.get('total_topics', 0)
-
-        if total > 0:
-            project_data['progress'] = (
-                (project_data.get('html_count', 0) * 0.4) +
-                (project_data.get('txt_count', 0) * 0.3) +
-                (project_data.get('mp3_count', 0) * 0.3)
-            ) / total * 100
-            project_data['progress'] = round(project_data['progress'], 1)
-        else:
-            project_data['progress'] = 0
-
-        return project_data
+        return ProgressCalculator.enrich_project_data(project)
 
     except HTTPException:
         raise
@@ -149,14 +136,18 @@ async def get_project_topics(project_id: int):
             topic_data['has_ssml'] = bool(topic_data.get('has_ssml'))
 
             # ステータス計算（SSMLは進捗に影響しない）
-            if topic_data['has_html'] and topic_data['has_txt'] and topic_data['has_mp3']:
-                topic_data['status'] = 'completed'
+            status = ProgressCalculator.calculate_topic_status(
+                topic_data['has_html'],
+                topic_data['has_txt'],
+                topic_data['has_mp3'],
+            )
+            topic_data['status'] = status
+
+            if status == 'completed':
                 completed += 1
-            elif topic_data['has_html'] or topic_data['has_txt'] or topic_data['has_mp3']:
-                topic_data['status'] = 'in_progress'
+            elif status == 'in_progress':
                 in_progress += 1
             else:
-                topic_data['status'] = 'not_started'
                 not_started += 1
 
             result_topics.append(topic_data)
@@ -317,70 +308,41 @@ async def get_stats():
 async def get_destinations():
     """納品先一覧取得"""
     try:
-        db = await get_database()
-        destinations = await db.get_all_destinations()
-        return {"destinations": destinations}
+        service = await _get_master_service("destination", "destinations")
+        return await service.get_all()
     except Exception as e:
         logger.error(f"Error getting destinations: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/destinations")
-async def create_destination(data: dict):
+async def create_destination(data: MasterDataCreateRequest):
     """納品先作成"""
     try:
-        name = data.get('name')
-        if not name:
-            raise HTTPException(status_code=400, detail="名前は必須です")
-
-        display_order = data.get('display_order', 0)
-
-        db = await get_database()
-        destination_id = await db.create_destination(name, display_order)
-        destination = await db.get_destination(destination_id)
-
-        return {"destination": destination}
-    except HTTPException:
-        raise
+        service = await _get_master_service("destination", "destinations")
+        return await service.create(data.name, data.display_order)
     except Exception as e:
         logger.error(f"Error creating destination: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.put("/destinations/reorder")
-async def reorder_destinations(data: dict):
+async def reorder_destinations(data: ReorderRequest):
     """納品先の並べ替え"""
     try:
-        ordered_ids = data.get('ordered_ids')
-        if not ordered_ids or not isinstance(ordered_ids, list):
-            raise HTTPException(status_code=400, detail="ordered_ids は必須です")
-        db = await get_database()
-        await db.reorder_destinations(ordered_ids)
-        return {"status": "ok"}
-    except HTTPException:
-        raise
+        service = await _get_master_service("destination", "destinations")
+        return await service.reorder(data.ordered_ids)
     except Exception as e:
         logger.error(f"Error reordering destinations: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.put("/destinations/{destination_id}")
-async def update_destination(destination_id: int, data: dict):
+async def update_destination(destination_id: int, data: MasterDataUpdateRequest):
     """納品先更新"""
     try:
-        name = data.get('name')
-        if not name:
-            raise HTTPException(status_code=400, detail="名前は必須です")
-
-        display_order = data.get('display_order')
-
-        db = await get_database()
-        await db.update_destination(destination_id, name, display_order)
-        destination = await db.get_destination(destination_id)
-
-        return {"destination": destination}
-    except HTTPException:
-        raise
+        service = await _get_master_service("destination", "destinations")
+        return await service.update(destination_id, data.name, data.display_order)
     except Exception as e:
         logger.error(f"Error updating destination: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -390,9 +352,8 @@ async def update_destination(destination_id: int, data: dict):
 async def delete_destination(destination_id: int):
     """納品先削除"""
     try:
-        db = await get_database()
-        await db.delete_destination(destination_id)
-        return {"status": "deleted"}
+        service = await _get_master_service("destination", "destinations")
+        return await service.delete(destination_id)
     except Exception as e:
         logger.error(f"Error deleting destination: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -404,70 +365,41 @@ async def delete_destination(destination_id: int):
 async def get_tts_engines():
     """音声変換エンジン一覧取得"""
     try:
-        db = await get_database()
-        tts_engines = await db.get_all_tts_engines()
-        return {"tts_engines": tts_engines}
+        service = await _get_master_service("tts_engine", "tts_engines")
+        return await service.get_all()
     except Exception as e:
         logger.error(f"Error getting TTS engines: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/tts-engines")
-async def create_tts_engine(data: dict):
+async def create_tts_engine(data: MasterDataCreateRequest):
     """音声変換エンジン作成"""
     try:
-        name = data.get('name')
-        if not name:
-            raise HTTPException(status_code=400, detail="名前は必須です")
-
-        display_order = data.get('display_order', 0)
-
-        db = await get_database()
-        tts_engine_id = await db.create_tts_engine(name, display_order)
-        tts_engine = await db.get_tts_engine(tts_engine_id)
-
-        return {"tts_engine": tts_engine}
-    except HTTPException:
-        raise
+        service = await _get_master_service("tts_engine", "tts_engines")
+        return await service.create(data.name, data.display_order)
     except Exception as e:
         logger.error(f"Error creating TTS engine: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.put("/tts-engines/reorder")
-async def reorder_tts_engines(data: dict):
+async def reorder_tts_engines(data: ReorderRequest):
     """音声変換エンジンの並べ替え"""
     try:
-        ordered_ids = data.get('ordered_ids')
-        if not ordered_ids or not isinstance(ordered_ids, list):
-            raise HTTPException(status_code=400, detail="ordered_ids は必須です")
-        db = await get_database()
-        await db.reorder_tts_engines(ordered_ids)
-        return {"status": "ok"}
-    except HTTPException:
-        raise
+        service = await _get_master_service("tts_engine", "tts_engines")
+        return await service.reorder(data.ordered_ids)
     except Exception as e:
         logger.error(f"Error reordering TTS engines: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.put("/tts-engines/{tts_engine_id}")
-async def update_tts_engine(tts_engine_id: int, data: dict):
+async def update_tts_engine(tts_engine_id: int, data: MasterDataUpdateRequest):
     """音声変換エンジン更新"""
     try:
-        name = data.get('name')
-        if not name:
-            raise HTTPException(status_code=400, detail="名前は必須です")
-
-        display_order = data.get('display_order')
-
-        db = await get_database()
-        await db.update_tts_engine(tts_engine_id, name, display_order)
-        tts_engine = await db.get_tts_engine(tts_engine_id)
-
-        return {"tts_engine": tts_engine}
-    except HTTPException:
-        raise
+        service = await _get_master_service("tts_engine", "tts_engines")
+        return await service.update(tts_engine_id, data.name, data.display_order)
     except Exception as e:
         logger.error(f"Error updating TTS engine: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -477,9 +409,8 @@ async def update_tts_engine(tts_engine_id: int, data: dict):
 async def delete_tts_engine(tts_engine_id: int):
     """音声変換エンジン削除"""
     try:
-        db = await get_database()
-        await db.delete_tts_engine(tts_engine_id)
-        return {"status": "deleted"}
+        service = await _get_master_service("tts_engine", "tts_engines")
+        return await service.delete(tts_engine_id)
     except Exception as e:
         logger.error(f"Error deleting TTS engine: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -491,70 +422,41 @@ async def delete_tts_engine(tts_engine_id: int):
 async def get_publication_statuses():
     """公開状態一覧取得"""
     try:
-        db = await get_database()
-        publication_statuses = await db.get_all_publication_statuses()
-        return {"publication_statuses": publication_statuses}
+        service = await _get_master_service("publication_status", "publication_statuses")
+        return await service.get_all()
     except Exception as e:
         logger.error(f"Error getting publication statuses: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/publication-statuses")
-async def create_publication_status(data: dict):
+async def create_publication_status(data: MasterDataCreateRequest):
     """公開状態作成"""
     try:
-        name = data.get('name')
-        if not name:
-            raise HTTPException(status_code=400, detail="名前は必須です")
-
-        display_order = data.get('display_order', 0)
-
-        db = await get_database()
-        publication_status_id = await db.create_publication_status(name, display_order)
-        publication_status = await db.get_publication_status(publication_status_id)
-
-        return {"publication_status": publication_status}
-    except HTTPException:
-        raise
+        service = await _get_master_service("publication_status", "publication_statuses")
+        return await service.create(data.name, data.display_order)
     except Exception as e:
         logger.error(f"Error creating publication status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.put("/publication-statuses/reorder")
-async def reorder_publication_statuses(data: dict):
+async def reorder_publication_statuses(data: ReorderRequest):
     """公開状態の並べ替え"""
     try:
-        ordered_ids = data.get('ordered_ids')
-        if not ordered_ids or not isinstance(ordered_ids, list):
-            raise HTTPException(status_code=400, detail="ordered_ids は必須です")
-        db = await get_database()
-        await db.reorder_publication_statuses(ordered_ids)
-        return {"status": "ok"}
-    except HTTPException:
-        raise
+        service = await _get_master_service("publication_status", "publication_statuses")
+        return await service.reorder(data.ordered_ids)
     except Exception as e:
         logger.error(f"Error reordering publication statuses: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.put("/publication-statuses/{publication_status_id}")
-async def update_publication_status(publication_status_id: int, data: dict):
+async def update_publication_status(publication_status_id: int, data: MasterDataUpdateRequest):
     """公開状態更新"""
     try:
-        name = data.get('name')
-        if not name:
-            raise HTTPException(status_code=400, detail="名前は必須です")
-
-        display_order = data.get('display_order')
-
-        db = await get_database()
-        await db.update_publication_status(publication_status_id, name, display_order)
-        publication_status = await db.get_publication_status(publication_status_id)
-
-        return {"publication_status": publication_status}
-    except HTTPException:
-        raise
+        service = await _get_master_service("publication_status", "publication_statuses")
+        return await service.update(publication_status_id, data.name, data.display_order)
     except Exception as e:
         logger.error(f"Error updating publication status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -564,9 +466,8 @@ async def update_publication_status(publication_status_id: int, data: dict):
 async def delete_publication_status(publication_status_id: int):
     """公開状態削除"""
     try:
-        db = await get_database()
-        await db.delete_publication_status(publication_status_id)
-        return {"status": "deleted"}
+        service = await _get_master_service("publication_status", "publication_statuses")
+        return await service.delete(publication_status_id)
     except Exception as e:
         logger.error(f"Error deleting publication status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -578,70 +479,41 @@ async def delete_publication_status(publication_status_id: int):
 async def get_check_statuses():
     """チェック進捗一覧取得"""
     try:
-        db = await get_database()
-        check_statuses = await db.get_all_check_statuses()
-        return {"check_statuses": check_statuses}
+        service = await _get_master_service("check_status", "check_statuses")
+        return await service.get_all()
     except Exception as e:
         logger.error(f"Error getting check statuses: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/check-statuses")
-async def create_check_status(data: dict):
+async def create_check_status(data: MasterDataCreateRequest):
     """チェック進捗作成"""
     try:
-        name = data.get('name')
-        if not name:
-            raise HTTPException(status_code=400, detail="名前は必須です")
-
-        display_order = data.get('display_order', 0)
-
-        db = await get_database()
-        check_status_id = await db.create_check_status(name, display_order)
-        check_status = await db.get_check_status(check_status_id)
-
-        return {"check_status": check_status}
-    except HTTPException:
-        raise
+        service = await _get_master_service("check_status", "check_statuses")
+        return await service.create(data.name, data.display_order)
     except Exception as e:
         logger.error(f"Error creating check status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.put("/check-statuses/reorder")
-async def reorder_check_statuses(data: dict):
+async def reorder_check_statuses(data: ReorderRequest):
     """チェック進捗の並べ替え"""
     try:
-        ordered_ids = data.get('ordered_ids')
-        if not ordered_ids or not isinstance(ordered_ids, list):
-            raise HTTPException(status_code=400, detail="ordered_ids は必須です")
-        db = await get_database()
-        await db.reorder_check_statuses(ordered_ids)
-        return {"status": "ok"}
-    except HTTPException:
-        raise
+        service = await _get_master_service("check_status", "check_statuses")
+        return await service.reorder(data.ordered_ids)
     except Exception as e:
         logger.error(f"Error reordering check statuses: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.put("/check-statuses/{check_status_id}")
-async def update_check_status(check_status_id: int, data: dict):
+async def update_check_status(check_status_id: int, data: MasterDataUpdateRequest):
     """チェック進捗更新"""
     try:
-        name = data.get('name')
-        if not name:
-            raise HTTPException(status_code=400, detail="名前は必須です")
-
-        display_order = data.get('display_order')
-
-        db = await get_database()
-        await db.update_check_status(check_status_id, name, display_order)
-        check_status = await db.get_check_status(check_status_id)
-
-        return {"check_status": check_status}
-    except HTTPException:
-        raise
+        service = await _get_master_service("check_status", "check_statuses")
+        return await service.update(check_status_id, data.name, data.display_order)
     except Exception as e:
         logger.error(f"Error updating check status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -651,9 +523,8 @@ async def update_check_status(check_status_id: int, data: dict):
 async def delete_check_status(check_status_id: int):
     """チェック進捗削除"""
     try:
-        db = await get_database()
-        await db.delete_check_status(check_status_id)
-        return {"status": "deleted"}
+        service = await _get_master_service("check_status", "check_statuses")
+        return await service.delete(check_status_id)
     except Exception as e:
         logger.error(f"Error deleting check status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -662,7 +533,7 @@ async def delete_check_status(check_status_id: int):
 # ========== プロジェクト設定API ==========
 
 @router.put("/projects/{project_id}/settings")
-async def update_project_settings(project_id: int, data: dict):
+async def update_project_settings(project_id: int, data: ProjectSettingsRequest):
     """プロジェクト設定更新（納品先・音声変換エンジン・公開状態・チェック進捗・備考）"""
     try:
         db = await get_database()
@@ -672,15 +543,13 @@ async def update_project_settings(project_id: int, data: dict):
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
 
-        destination_id = data.get('destination_id')
-        tts_engine_id = data.get('tts_engine_id')
-        publication_status_id = data.get('publication_status_id')
-        check_status_id = data.get('check_status_id')
-        notes = data.get('notes')
-
         await db.update_project_settings(
-            project_id, destination_id, tts_engine_id,
-            publication_status_id, check_status_id, notes
+            project_id,
+            data.destination_id,
+            data.tts_engine_id,
+            data.publication_status_id,
+            data.check_status_id,
+            data.notes,
         )
 
         # 更新後のプロジェクトを取得
