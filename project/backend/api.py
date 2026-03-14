@@ -9,6 +9,7 @@ Service layer を活用してビジネスロジックをハンドラから分離
 from datetime import datetime
 from typing import Optional
 from pathlib import Path
+import os
 import uuid
 import asyncio
 
@@ -40,7 +41,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["API"])
 
 # デフォルトコンテンツパス
-DEFAULT_CONTENT_PATH = Path("/Users/sohei/Desktop/Learning-Curricula")
+DEFAULT_CONTENT_PATH = Path(os.environ.get("CONTENT_PATH", str(Path.home() / "Learning-Curricula")))
 
 
 # ========== ヘルパー関数 ==========
@@ -703,10 +704,27 @@ async def get_rag_status(project_id: int):
 
         rag_index = await db.get_rag_index(project_id)
 
+        # 外部ビルド進捗ファイルを直接読み（最新データ）
+        build_progress = None
+        project_path = Path(project['path'])
+        progress_path = project_path / "rag_build_progress.json"
+        if progress_path.exists():
+            try:
+                import json as json_mod
+                mtime = progress_path.stat().st_mtime
+                from datetime import datetime as dt
+                age_seconds = dt.now().timestamp() - mtime
+                if age_seconds <= 600:  # 10分以内
+                    with open(progress_path, 'r', encoding='utf-8') as f:
+                        build_progress = json_mod.load(f)
+            except Exception:
+                pass
+
         return {
             "project_id": project_id,
             "has_rag_chunks": bool(project.get('has_rag_chunks', 0)),
-            "rag_index": rag_index
+            "rag_index": rag_index,
+            "build_progress": build_progress
         }
     except HTTPException:
         raise

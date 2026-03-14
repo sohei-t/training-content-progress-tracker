@@ -4,6 +4,8 @@ FastAPIメインアプリケーション
 """
 
 import asyncio
+import json
+import os
 from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -34,7 +36,7 @@ logger = logging.getLogger(__name__)
 # パス設定
 BASE_DIR = Path(__file__).parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
-DEFAULT_CONTENT_PATH = Path("/Users/sohei/Desktop/Learning-Curricula")
+DEFAULT_CONTENT_PATH = Path(os.environ.get("CONTENT_PATH", str(Path.home() / "Learning-Curricula")))
 
 # グローバル状態
 _watcher: MultiProjectWatcher = None
@@ -62,7 +64,16 @@ async def lifespan(app: FastAPI):
         """ファイル変更時のコールバック"""
         logger.info(f"File change detected in {project_name}: {len(paths)} files")
 
-        # 差分スキャン実行
+        # rag_build_progress.json のみの変更ならファストパス
+        rag_progress_paths = [p for p in paths if Path(p).name == 'rag_build_progress.json']
+        non_rag_paths = [p for p in paths if Path(p).name != 'rag_build_progress.json']
+
+        if rag_progress_paths and not non_rag_paths:
+            # ファストパス: フルスキャンせずJSONを直接読み、DB更新 + WebSocket broadcast
+            await _handle_rag_progress_fast(project_name, rag_progress_paths[0])
+            return
+
+        # 通常のファイル変更はフルスキャン
         project = await db.get_project_by_name(project_name)
         if project:
             project_path = Path(project['path'])
@@ -72,6 +83,65 @@ async def lifespan(app: FastAPI):
             updated_project = await db.get_project_by_name(project_name)
             if updated_project:
                 await ws.broadcast_project_update(dict(updated_project))
+
+    async def _handle_rag_progress_fast(project_name: str, progress_path: str):
+        """rag_build_progress.json のファストパス処理"""
+        try:
+            p = Path(progress_path)
+            if not p.exists():
+                return
+
+            # スタル判定: 10分以上更新がないファイルはスキップ
+            mtime = p.stat().st_mtime
+            if (datetime.now().timestamp() - mtime) > 600:
+                return
+
+            with open(p, 'r', encoding='utf-8') as f:
+                progress_data = json.load(f)
+
+            project = await db.get_project_by_name(project_name)
+            if not project:
+                return
+
+            project_id = project['id']
+            ext_status = progress_data.get('status', '')
+
+            # ステータスマッピング
+            status_map = {
+                'chunking': 'chunks_ready',
+                'embedding': 'indexing',
+                'testing': 'indexing',
+                'completed': 'indexed',
+                'failed': 'failed',
+            }
+            mapped_status = status_map.get(ext_status, 'indexing')
+
+            # エージェントが明示的に書いた進捗は常に信頼する
+            await db.update_rag_build_progress(
+                project_id=project_id,
+                status=mapped_status,
+                build_phase=progress_data.get('phase', ''),
+                build_message=progress_data.get('message', ''),
+                build_percent=progress_data.get('progress_percent', 0),
+                chunk_count=progress_data.get('details', {}).get('chunk_count', 0)
+            )
+
+            # WebSocket broadcast（軽量イベント）
+            await ws.broadcast("rag_external_progress", {
+                "project_id": project_id,
+                "project_name": project_name,
+                "status": ext_status,
+                "phase": progress_data.get('phase', ''),
+                "message": progress_data.get('message', ''),
+                "progress_percent": progress_data.get('progress_percent', 0),
+                "details": progress_data.get('details', {}),
+                "mapped_status": mapped_status
+            })
+
+            logger.info(f"RAG progress fast-path: {project_name} ({ext_status}, {progress_data.get('progress_percent', 0)}%)")
+
+        except Exception as e:
+            logger.warning(f"RAG progress fast-path error for {project_name}: {e}")
 
     _watcher = MultiProjectWatcher(
         DEFAULT_CONTENT_PATH,
