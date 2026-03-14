@@ -420,7 +420,7 @@ Environment variables are loaded from `~/.config/ai-agents/profiles/default.env`
 
 | Constant | Location | Default | Description |
 |---|---|---|---|
-| `DEFAULT_CONTENT_PATH` | `main.py` | `/Users/sohei/Desktop/Learning-Curricula` | Base directory for project content |
+| `DEFAULT_CONTENT_PATH` | `main.py` | `~/Learning-Curricula` | Base directory for project content |
 | `DEBOUNCE_MS` | `watcher.py` | `100` | File event debounce interval in milliseconds |
 | `MAX_HASH_CACHE_SIZE` | `scanner.py` | `1000` | Maximum entries in the xxhash LRU cache |
 | `HASH_TTL_SECONDS` | `scanner.py` | `300` | TTL for cached file hashes (5 minutes) |
